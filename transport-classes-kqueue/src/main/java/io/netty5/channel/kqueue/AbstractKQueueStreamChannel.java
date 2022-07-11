@@ -17,6 +17,7 @@ package io.netty5.channel.kqueue;
 
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.channel.AdaptiveRecvBufferAllocator;
 import io.netty5.channel.ChannelShutdownDirection;
 import io.netty5.channel.unix.UnixChannel;
 import io.netty5.util.Resource;
@@ -57,20 +58,15 @@ public abstract class AbstractKQueueStreamChannel
     private final Runnable flushTask = this::writeFlushed;
 
     AbstractKQueueStreamChannel(P parent, EventLoop eventLoop, BsdSocket fd, boolean active) {
-        super(parent, eventLoop, fd, active);
+        super(parent, eventLoop, METADATA, new AdaptiveRecvBufferAllocator(), fd, active);
     }
 
     AbstractKQueueStreamChannel(P parent, EventLoop eventLoop, BsdSocket fd, R remote) {
-        super(parent, eventLoop, fd, remote);
+        super(parent, eventLoop, METADATA, new AdaptiveRecvBufferAllocator(), fd, remote);
     }
 
     AbstractKQueueStreamChannel(EventLoop eventLoop, BsdSocket fd) {
         this(null, eventLoop, fd, isSoErrorZero(fd));
-    }
-
-    @Override
-    public ChannelMetadata metadata() {
-        return METADATA;
     }
 
     /**

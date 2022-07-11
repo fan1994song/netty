@@ -142,13 +142,7 @@ public final class EpollDatagramChannel extends AbstractEpollChannel<UnixChannel
     }
 
     private EpollDatagramChannel(EventLoop eventLoop, LinuxSocket fd, boolean active) {
-        super(null, eventLoop, fd, active);
-        setRecvBufferAllocator(new FixedRecvBufferAllocator(2048), metadata());
-    }
-
-    @Override
-    public ChannelMetadata metadata() {
-        return METADATA;
+        super(null, eventLoop, METADATA, new FixedRecvBufferAllocator(2048), fd, active);
     }
 
     @Override

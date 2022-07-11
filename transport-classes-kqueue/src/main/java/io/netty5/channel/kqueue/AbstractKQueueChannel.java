@@ -48,7 +48,6 @@ import static java.util.Objects.requireNonNull;
 
 abstract class AbstractKQueueChannel<P extends UnixChannel, L extends SocketAddress, R extends SocketAddress>
         extends AbstractChannel<P, L, R> implements UnixChannel {
-    private static final ChannelMetadata METADATA = new ChannelMetadata(false);
 
     private final Runnable readReadyRunnable = new Runnable() {
         @Override
@@ -81,8 +80,9 @@ abstract class AbstractKQueueChannel<P extends UnixChannel, L extends SocketAddr
     private KQueueRecvBufferAllocatorHandle allocHandle;
 
     @SuppressWarnings("unchecked")
-    AbstractKQueueChannel(P parent, EventLoop eventLoop, BsdSocket fd, boolean active) {
-        super(parent, eventLoop);
+    AbstractKQueueChannel(P parent, EventLoop eventLoop, ChannelMetadata metadata,
+                          RecvBufferAllocator defaultRecvAllocator, BsdSocket fd, boolean active) {
+        super(parent, eventLoop, metadata, defaultRecvAllocator);
         socket = requireNonNull(fd, "fd");
         this.active = active;
         if (active) {
@@ -94,8 +94,9 @@ abstract class AbstractKQueueChannel<P extends UnixChannel, L extends SocketAddr
     }
 
     @SuppressWarnings("unchecked")
-    AbstractKQueueChannel(P parent, EventLoop eventLoop, BsdSocket fd, R remote) {
-        super(parent, eventLoop);
+    AbstractKQueueChannel(P parent, EventLoop eventLoop, ChannelMetadata metadata,
+                          RecvBufferAllocator defaultRecvAllocator, BsdSocket fd, R remote) {
+        super(parent, eventLoop, metadata, defaultRecvAllocator);
         socket = requireNonNull(fd, "fd");
         active = true;
         // Directly cache the remote and local addresses
@@ -201,11 +202,6 @@ abstract class AbstractKQueueChannel<P extends UnixChannel, L extends SocketAddr
     @Override
     public boolean isActive() {
         return active;
-    }
-
-    @Override
-    public ChannelMetadata metadata() {
-        return METADATA;
     }
 
     @Override

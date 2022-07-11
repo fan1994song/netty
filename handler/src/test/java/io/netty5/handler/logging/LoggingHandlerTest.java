@@ -20,7 +20,6 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.Appender;
 import io.netty5.buffer.api.Buffer;
 import io.netty5.channel.ChannelHandler;
-import io.netty5.channel.ChannelMetadata;
 import io.netty5.channel.ChannelOption;
 import io.netty5.channel.WriteBufferWaterMark;
 import io.netty5.channel.embedded.EmbeddedChannel;
@@ -311,12 +310,7 @@ public class LoggingHandlerTest {
     private static final class DisconnectingEmbeddedChannel extends EmbeddedChannel {
 
         private DisconnectingEmbeddedChannel(ChannelHandler... handlers) {
-            super(handlers);
-        }
-
-        @Override
-        public ChannelMetadata metadata() {
-            return new ChannelMetadata(true);
+            super(true, handlers);
         }
     }
 }

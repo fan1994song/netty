@@ -51,19 +51,13 @@ public abstract class AbstractEpollServerChannel
 
     AbstractEpollServerChannel(EventLoop eventLoop, EventLoopGroup childEventLoopGroup,
                                Class<? extends Channel> childChannelType, LinuxSocket fd, boolean active) {
-        super(null, eventLoop, fd, active);
+        super(null, eventLoop, METADATA, new ServerChannelRecvBufferAllocator(), fd, active);
         this.childEventLoopGroup = validateEventLoopGroup(childEventLoopGroup, "childEventLoopGroup", childChannelType);
-        setRecvBufferAllocator(new ServerChannelRecvBufferAllocator(), metadata());
     }
 
     @Override
     public final EventLoopGroup childEventLoopGroup() {
         return childEventLoopGroup;
-    }
-
-    @Override
-    public final ChannelMetadata metadata() {
-        return METADATA;
     }
 
     @Override

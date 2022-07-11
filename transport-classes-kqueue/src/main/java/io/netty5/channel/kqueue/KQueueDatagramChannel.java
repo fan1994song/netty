@@ -23,7 +23,6 @@ import io.netty5.channel.ChannelOption;
 import io.netty5.channel.ChannelPipeline;
 import io.netty5.channel.DefaultBufferAddressedEnvelope;
 import io.netty5.channel.EventLoop;
-import io.netty5.channel.FixedRecvBufferAllocator;
 import io.netty5.channel.socket.DatagramPacket;
 import io.netty5.channel.socket.DatagramChannel;
 import io.netty5.channel.unix.DatagramSocketAddress;
@@ -96,7 +95,6 @@ public final class KQueueDatagramChannel
 
     public KQueueDatagramChannel(EventLoop eventLoop, ProtocolFamily protocolFamily) {
         super(null, eventLoop, newSocketDgram(protocolFamily), false);
-        setRecvBufferAllocator(new FixedRecvBufferAllocator(2048), metadata());
     }
 
     public KQueueDatagramChannel(EventLoop eventLoop, int fd) {
@@ -105,7 +103,6 @@ public final class KQueueDatagramChannel
 
     KQueueDatagramChannel(EventLoop eventLoop, BsdSocket socket, boolean active) {
         super(null, eventLoop, socket, active);
-        setRecvBufferAllocator(new FixedRecvBufferAllocator(2048), metadata());
     }
 
     @SuppressWarnings({ "unchecked", "deprecation" })

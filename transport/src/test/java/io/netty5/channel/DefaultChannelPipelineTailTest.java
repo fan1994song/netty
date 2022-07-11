@@ -237,7 +237,7 @@ public class DefaultChannelPipelineTailTest {
         private boolean outputShutdown;
 
         protected MyChannel(EventLoop eventLoop) {
-            super(null, eventLoop);
+            super(null, eventLoop, METADATA);
         }
 
         @Override
@@ -253,11 +253,6 @@ public class DefaultChannelPipelineTailTest {
         @Override
         public boolean isActive() {
             return isOpen() && active;
-        }
-
-        @Override
-        public ChannelMetadata metadata() {
-            return METADATA;
         }
 
         @Override

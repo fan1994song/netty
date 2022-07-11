@@ -44,7 +44,6 @@ public class LocalServerChannel extends AbstractServerChannel<LocalChannel, Loca
     public LocalServerChannel(EventLoop eventLoop, EventLoopGroup childEventLoopGroup) {
         super(eventLoop, childEventLoopGroup, LocalChannel.class);
         setOption(ChannelOption.BUFFER_ALLOCATOR, DefaultBufferAllocators.onHeapAllocator());
-        setRecvBufferAllocator(new ServerChannelRecvBufferAllocator(), metadata());
     }
 
     @Override

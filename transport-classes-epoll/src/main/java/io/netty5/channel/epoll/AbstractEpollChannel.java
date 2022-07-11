@@ -20,6 +20,7 @@ import io.netty5.buffer.api.BufferAllocator;
 import io.netty5.buffer.api.DefaultBufferAllocators;
 import io.netty5.channel.ChannelOption;
 import io.netty5.channel.ChannelShutdownDirection;
+import io.netty5.channel.RecvBufferAllocator;
 import io.netty5.channel.unix.IntegerUnixChannelOption;
 import io.netty5.channel.unix.RawUnixChannelOption;
 import io.netty5.util.Resource;
@@ -47,7 +48,6 @@ import static java.util.Objects.requireNonNull;
 
 abstract class AbstractEpollChannel<P extends UnixChannel, L extends SocketAddress, R extends SocketAddress>
         extends AbstractChannel<P, L, R> implements UnixChannel {
-    private static final ChannelMetadata METADATA = new ChannelMetadata(false);
     final LinuxSocket socket;
     /**
      * The future of the current connection attempt.  If not null, subsequent
@@ -75,13 +75,15 @@ abstract class AbstractEpollChannel<P extends UnixChannel, L extends SocketAddre
         }
     };
 
-    AbstractEpollChannel(EventLoop eventLoop, LinuxSocket fd) {
-        this(null, eventLoop, fd, false);
+    AbstractEpollChannel(EventLoop eventLoop, ChannelMetadata metadata,
+                         RecvBufferAllocator defaultRecvAllocator, LinuxSocket fd) {
+        this(null, eventLoop, metadata, defaultRecvAllocator, fd, false);
     }
 
     @SuppressWarnings("unchecked")
-    AbstractEpollChannel(P parent, EventLoop eventLoop, LinuxSocket fd, boolean active) {
-        super(parent, eventLoop);
+    AbstractEpollChannel(P parent, EventLoop eventLoop, ChannelMetadata metadata,
+                         RecvBufferAllocator defaultRecvAllocator, LinuxSocket fd, boolean active) {
+        super(parent, eventLoop, metadata, defaultRecvAllocator);
         socket = requireNonNull(fd, "fd");
         this.active = active;
         if (active) {
@@ -93,8 +95,9 @@ abstract class AbstractEpollChannel<P extends UnixChannel, L extends SocketAddre
     }
 
     @SuppressWarnings("unchecked")
-    AbstractEpollChannel(P parent, EventLoop eventLoop, LinuxSocket fd, R remote) {
-        super(parent, eventLoop);
+    AbstractEpollChannel(P parent, EventLoop eventLoop, ChannelMetadata metadata,
+                         RecvBufferAllocator defaultRecvAllocator, LinuxSocket fd, R remote) {
+        super(parent, eventLoop, metadata, defaultRecvAllocator);
         socket = requireNonNull(fd, "fd");
         active = true;
         // Directly cache the remote and local addresses
@@ -142,11 +145,6 @@ abstract class AbstractEpollChannel<P extends UnixChannel, L extends SocketAddre
     @Override
     public boolean isActive() {
         return active;
-    }
-
-    @Override
-    public ChannelMetadata metadata() {
-        return METADATA;
     }
 
     @Override

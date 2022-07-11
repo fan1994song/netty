@@ -24,7 +24,6 @@ import io.netty5.channel.ChannelOption;
 import io.netty5.channel.ChannelPipeline;
 import io.netty5.channel.DefaultBufferAddressedEnvelope;
 import io.netty5.channel.EventLoop;
-import io.netty5.channel.FixedRecvBufferAllocator;
 import io.netty5.channel.unix.DomainDatagramChannel;
 import io.netty5.channel.unix.DomainDatagramPacket;
 import io.netty5.channel.unix.DomainDatagramSocketAddress;
@@ -93,7 +92,6 @@ public final class KQueueDomainDatagramChannel
 
     private KQueueDomainDatagramChannel(EventLoop eventLoop, BsdSocket socket, boolean active) {
         super(null, eventLoop, socket, active);
-        setRecvBufferAllocator(new FixedRecvBufferAllocator(2048), metadata());
     }
 
     @Override

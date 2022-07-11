@@ -78,21 +78,19 @@ public class LocalChannel extends AbstractChannel<LocalServerChannel, LocalAddre
     private volatile boolean outputShutdown;
 
     public LocalChannel(EventLoop eventLoop) {
-        super(null, eventLoop);
-        setOption(ChannelOption.BUFFER_ALLOCATOR, DefaultBufferAllocators.onHeapAllocator());
+        this(null, eventLoop, null);
     }
 
     protected LocalChannel(LocalServerChannel parent, EventLoop eventLoop, LocalChannel peer) {
-        super(parent, eventLoop);
+        super(parent, eventLoop, METADATA);
         setOption(ChannelOption.BUFFER_ALLOCATOR, DefaultBufferAllocators.onHeapAllocator());
         this.peer = peer;
-        localAddress = parent.localAddress();
-        remoteAddress = peer.localAddress();
-    }
-
-    @Override
-    public ChannelMetadata metadata() {
-        return METADATA;
+        if (parent != null) {
+            localAddress = parent.localAddress();
+        }
+        if (peer != null) {
+            remoteAddress = peer.localAddress();
+        }
     }
 
     @Override

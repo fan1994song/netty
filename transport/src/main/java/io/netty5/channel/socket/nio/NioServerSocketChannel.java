@@ -102,20 +102,15 @@ public class NioServerSocketChannel extends AbstractNioMessageChannel<Channel, S
      */
     public NioServerSocketChannel(
             EventLoop eventLoop, EventLoopGroup childEventLoopGroup, ServerSocketChannel channel) {
-        super(null, eventLoop, channel, SelectionKey.OP_ACCEPT);
+        super(null, eventLoop, METADATA, new ServerChannelRecvBufferAllocator(),
+                channel, SelectionKey.OP_ACCEPT);
         this.childEventLoopGroup = validateEventLoopGroup(
                 childEventLoopGroup, "childEventLoopGroup", NioSocketChannel.class);
-        setRecvBufferAllocator(new ServerChannelRecvBufferAllocator(), metadata());
     }
 
     @Override
     public EventLoopGroup childEventLoopGroup() {
         return childEventLoopGroup;
-    }
-
-    @Override
-    public ChannelMetadata metadata() {
-        return METADATA;
     }
 
     @Override

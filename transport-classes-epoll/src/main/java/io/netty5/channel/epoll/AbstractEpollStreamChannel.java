@@ -17,6 +17,7 @@ package io.netty5.channel.epoll;
 
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.channel.AdaptiveRecvBufferAllocator;
 import io.netty5.channel.ChannelShutdownDirection;
 import io.netty5.channel.unix.UnixChannel;
 import io.netty5.util.Resource;
@@ -70,26 +71,21 @@ public abstract class AbstractEpollStreamChannel
     }
 
     AbstractEpollStreamChannel(P parent, EventLoop eventLoop, LinuxSocket fd) {
-        super(parent, eventLoop, fd, true);
+        super(parent, eventLoop, METADATA, new AdaptiveRecvBufferAllocator(), fd, true);
         // Add EPOLLRDHUP so we are notified once the remote peer close the connection.
         flags |= Native.EPOLLRDHUP;
     }
 
     AbstractEpollStreamChannel(P parent, EventLoop eventLoop, LinuxSocket fd, R remote) {
-        super(parent, eventLoop, fd, remote);
+        super(parent, eventLoop, METADATA, new AdaptiveRecvBufferAllocator(), fd, remote);
         // Add EPOLLRDHUP so we are notified once the remote peer close the connection.
         flags |= Native.EPOLLRDHUP;
     }
 
     protected AbstractEpollStreamChannel(EventLoop eventLoop, LinuxSocket fd, boolean active) {
-        super(null, eventLoop, fd, active);
+        super(null, eventLoop, METADATA, new AdaptiveRecvBufferAllocator(), fd, active);
         // Add EPOLLRDHUP so we are notified once the remote peer close the connection.
         flags |= Native.EPOLLRDHUP;
-    }
-
-    @Override
-    public final ChannelMetadata metadata() {
-        return METADATA;
     }
 
     /**

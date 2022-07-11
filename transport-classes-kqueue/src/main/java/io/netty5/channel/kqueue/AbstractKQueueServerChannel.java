@@ -48,19 +48,13 @@ public abstract class AbstractKQueueServerChannel
 
     AbstractKQueueServerChannel(EventLoop eventLoop, EventLoopGroup childEventLoopGroup,
                                 Class<? extends Channel> childChannelType, BsdSocket fd, boolean active) {
-        super(null, eventLoop, fd, active);
+        super(null, eventLoop, METADATA, new ServerChannelRecvBufferAllocator(), fd, active);
         this.childEventLoopGroup = validateEventLoopGroup(childEventLoopGroup, "childEventLoopGroup", childChannelType);
-        setRecvBufferAllocator(new ServerChannelRecvBufferAllocator(), metadata());
     }
 
     @Override
     public EventLoopGroup childEventLoopGroup() {
         return childEventLoopGroup;
-    }
-
-    @Override
-    public ChannelMetadata metadata() {
-        return METADATA;
     }
 
     @Override

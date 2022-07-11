@@ -17,6 +17,7 @@ package io.netty5.channel.embedded;
 
 import io.netty5.buffer.api.internal.ResourceSupport;
 import io.netty5.buffer.api.internal.Statics;
+import io.netty5.channel.AdaptiveRecvBufferAllocator;
 import io.netty5.channel.ChannelShutdownDirection;
 import io.netty5.util.Resource;
 import io.netty5.channel.AbstractChannel;
@@ -64,7 +65,6 @@ public class EmbeddedChannel extends AbstractChannel<Channel, SocketAddress, Soc
 
     private final FutureListener<Void> recordExceptionListener = this::recordException;
 
-    private final ChannelMetadata metadata;
     private Queue<Object> inboundMessages;
     private Queue<Object> outboundMessages;
     private Throwable lastException;
@@ -175,8 +175,7 @@ public class EmbeddedChannel extends AbstractChannel<Channel, SocketAddress, Soc
      */
     public EmbeddedChannel(Channel parent, ChannelId channelId, boolean register, boolean hasDisconnect,
                            final ChannelHandler... handlers) {
-        super(parent, new EmbeddedEventLoop(), channelId);
-        metadata = metadata(hasDisconnect);
+        super(parent, new EmbeddedEventLoop(), metadata(hasDisconnect), new AdaptiveRecvBufferAllocator(), channelId);
         setup(register, handlers);
     }
 
@@ -219,11 +218,6 @@ public class EmbeddedChannel extends AbstractChannel<Channel, SocketAddress, Soc
     @Override
     protected final DefaultChannelPipeline newChannelPipeline() {
         return new EmbeddedChannelPipeline(this);
-    }
-
-    @Override
-    public ChannelMetadata metadata() {
-        return metadata;
     }
 
     @Override
@@ -528,7 +522,7 @@ public class EmbeddedChannel extends AbstractChannel<Channel, SocketAddress, Soc
     @Override
     public final Future<Void> disconnect() {
         Future<Void> future = super.disconnect();
-        finishPendingTasks(!metadata.hasDisconnect());
+        finishPendingTasks(!metadata().hasDisconnect());
         return future;
     }
 
@@ -731,7 +725,7 @@ public class EmbeddedChannel extends AbstractChannel<Channel, SocketAddress, Soc
 
     @Override
     protected void doDisconnect() throws Exception {
-        if (!metadata.hasDisconnect()) {
+        if (!metadata().hasDisconnect()) {
             doClose();
         }
     }

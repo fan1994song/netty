@@ -17,6 +17,7 @@ package io.netty5.channel.nio;
 
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.channel.AdaptiveRecvBufferAllocator;
 import io.netty5.channel.ChannelShutdownDirection;
 import io.netty5.util.Resource;
 import io.netty5.channel.Channel;
@@ -59,12 +60,7 @@ public abstract class AbstractNioByteChannel<P extends Channel, L extends Socket
      * @param ch                the underlying {@link SelectableChannel} on which it operates
      */
     protected AbstractNioByteChannel(P parent, EventLoop eventLoop, SelectableChannel ch) {
-        super(parent, eventLoop, ch, SelectionKey.OP_READ);
-    }
-
-    @Override
-    public ChannelMetadata metadata() {
-        return METADATA;
+        super(parent, eventLoop, METADATA, new AdaptiveRecvBufferAllocator(), ch, SelectionKey.OP_READ);
     }
 
     final boolean shouldBreakReadReady() {
@@ -167,7 +163,7 @@ public abstract class AbstractNioByteChannel<P extends Channel, L extends Socket
      * Write objects to the OS.
      * @param in the collection which contains objects to write.
      * @return The value that should be decremented from the write quantum which starts at
-     * {@link ChannelConfig#getWriteSpinCount()}. The typical use cases are as follows:
+     * {@link #getWriteSpinCount()}. The typical use cases are as follows:
      * <ul>
      *     <li>0 - if no write was attempted. This is appropriate if an empty {@link Buffer} (or other empty content)
      *     is encountered</li>

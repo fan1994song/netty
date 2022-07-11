@@ -100,8 +100,7 @@ public final class EpollDomainDatagramChannel
     }
 
     private EpollDomainDatagramChannel(EventLoop eventLoop, LinuxSocket socket, boolean active) {
-        super(null, eventLoop, socket, active);
-        setRecvBufferAllocator(new FixedRecvBufferAllocator(2048), metadata());
+        super(null, eventLoop, METADATA, new FixedRecvBufferAllocator(2048), socket, active);
     }
 
     @Override
@@ -371,11 +370,6 @@ public final class EpollDomainDatagramChannel
     @Override
     protected DomainSocketAddress localAddress0() {
         return local;
-    }
-
-    @Override
-    public ChannelMetadata metadata() {
-        return METADATA;
     }
 
     /**

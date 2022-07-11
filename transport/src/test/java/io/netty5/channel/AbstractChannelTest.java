@@ -202,7 +202,7 @@ public class AbstractChannelTest {
         private static final ChannelMetadata TEST_METADATA = new ChannelMetadata(false);
 
         TestChannel(EventLoop eventLoop) {
-            super(null, eventLoop);
+            super(null, eventLoop, TEST_METADATA);
         }
 
         @Override
@@ -213,11 +213,6 @@ public class AbstractChannelTest {
         @Override
         public boolean isActive() {
             return true;
-        }
-
-        @Override
-        public ChannelMetadata metadata() {
-            return TEST_METADATA;
         }
 
         @Override

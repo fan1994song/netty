@@ -160,8 +160,7 @@ public final class NioDatagramChannel
      * Create a new instance from the given {@link DatagramChannel}.
      */
     public NioDatagramChannel(EventLoop eventLoop, DatagramChannel socket) {
-        super(null, eventLoop, socket, SelectionKey.OP_READ);
-        setRecvBufferAllocator(new FixedRecvBufferAllocator(2048), metadata());
+        super(null, eventLoop, METADATA, new FixedRecvBufferAllocator(2048), socket, SelectionKey.OP_READ);
     }
 
     @SuppressWarnings("unchecked")
@@ -432,11 +431,6 @@ public final class NioDatagramChannel
             default:
                 throw new AssertionError();
         }
-    }
-
-    @Override
-    public ChannelMetadata metadata() {
-        return METADATA;
     }
 
     @Override

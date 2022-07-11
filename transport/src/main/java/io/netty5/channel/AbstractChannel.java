@@ -76,6 +76,7 @@ public abstract class AbstractChannel<P extends Channel, L extends SocketAddress
     private final ClosePromise closePromise;
     private final Runnable fireChannelWritabilityChangedTask;
     private final EventLoop eventLoop;
+    private final ChannelMetadata metadata;
 
     /** Cache for the string representation of this channel */
     private boolean strValActive;
@@ -134,27 +135,55 @@ public abstract class AbstractChannel<P extends Channel, L extends SocketAddress
      *
      * @param parent        the parent of this channel. {@code null} if there's no parent.
      * @param eventLoop     the {@link EventLoop} which will be used.
+     * @param metadata      the {@link ChannelMetadata} to use.
      */
-    protected AbstractChannel(P parent, EventLoop eventLoop) {
-        this(parent, eventLoop, DefaultChannelId.newInstance());
+    protected AbstractChannel(P parent, EventLoop eventLoop, ChannelMetadata metadata) {
+        this(parent, eventLoop, metadata, new AdaptiveRecvBufferAllocator());
     }
 
     /**
      * Creates a new instance.
      *
-     * @param parent        the parent of this channel. {@code null} if there's no parent.
-     * @param eventLoop     the {@link EventLoop} which will be used.
-     * @param id            the {@link ChannelId} which will be used.
+     * @param parent                        the parent of this channel. {@code null} if there's no parent.
+     * @param eventLoop                     the {@link EventLoop} which will be used.
+     * @param metadata                      the {@link ChannelMetadata} to use.
+     * @param defaultRecvBufferAllocator    the {@link RecvBufferAllocator} that is used by default.
      */
-    protected AbstractChannel(P parent, EventLoop eventLoop, ChannelId id) {
+    protected AbstractChannel(P parent, EventLoop eventLoop,
+                              ChannelMetadata metadata, RecvBufferAllocator defaultRecvBufferAllocator) {
+        this(parent, eventLoop, metadata, defaultRecvBufferAllocator, DefaultChannelId.newInstance());
+    }
+
+    /**
+     * Creates a new instance.
+     *
+     * @param parent                        the parent of this channel. {@code null} if there's no parent.
+     * @param eventLoop                     the {@link EventLoop} which will be used.
+     * @param metadata                      the {@link ChannelMetadata} to use.
+     * @param defaultRecvBufferAllocator    the {@link RecvBufferAllocator} that is used by default.
+     * @param id                            the {@link ChannelId} which will be used.
+     */
+    protected AbstractChannel(P parent, EventLoop eventLoop, ChannelMetadata metadata,
+                              RecvBufferAllocator defaultRecvBufferAllocator, ChannelId id) {
         this.parent = parent;
         this.eventLoop = validateEventLoopGroup(eventLoop, "eventLoop", getClass());
+        this.metadata = requireNonNull(metadata, "metadata");
         closePromise = new ClosePromise(eventLoop);
         outboundBuffer = new ChannelOutboundBuffer(eventLoop);
         this.id = id;
         pipeline = newChannelPipeline();
         fireChannelWritabilityChangedTask = () -> pipeline().fireChannelWritabilityChanged();
-        setRecvBufferAllocator(new AdaptiveRecvBufferAllocator(), metadata());
+        rcvBufAllocator = validateAndConfigure(defaultRecvBufferAllocator, metadata);
+    }
+
+    private static RecvBufferAllocator validateAndConfigure(RecvBufferAllocator defaultRecvBufferAllocator,
+                                                            ChannelMetadata metadata) {
+        requireNonNull(defaultRecvBufferAllocator, "defaultRecvBufferAllocator");
+        if (defaultRecvBufferAllocator instanceof MaxMessagesRecvBufferAllocator) {
+            ((MaxMessagesRecvBufferAllocator) defaultRecvBufferAllocator)
+                    .maxMessagesPerRead(metadata.defaultMaxMessagesPerRead());
+        }
+        return defaultRecvBufferAllocator;
     }
 
     protected static <T extends EventLoopGroup> T validateEventLoopGroup(
@@ -170,6 +199,11 @@ public abstract class AbstractChannel<P extends Channel, L extends SocketAddress
     @Override
     public final ChannelId id() {
         return id;
+    }
+
+    @Override
+    public final ChannelMetadata metadata() {
+        return metadata;
     }
 
     /**
@@ -1431,21 +1465,6 @@ public abstract class AbstractChannel<P extends Channel, L extends SocketAddress
 
     private void setRecvBufferAllocator(RecvBufferAllocator allocator) {
         rcvBufAllocator = requireNonNull(allocator, "allocator");
-    }
-
-    /**
-     * Set the {@link RecvBufferAllocator} which is used for the channel to allocate receive buffers.
-     * @param allocator the allocator to set.
-     * @param metadata Used to set the {@link ChannelMetadata#defaultMaxMessagesPerRead()} if {@code allocator}
-     * is of type {@link MaxMessagesRecvBufferAllocator}.
-     */
-    protected final void setRecvBufferAllocator(RecvBufferAllocator allocator, ChannelMetadata metadata) {
-        requireNonNull(allocator, "allocator");
-        requireNonNull(metadata, "metadata");
-        if (allocator instanceof MaxMessagesRecvBufferAllocator) {
-            ((MaxMessagesRecvBufferAllocator) allocator).maxMessagesPerRead(metadata.defaultMaxMessagesPerRead());
-        }
-        setRecvBufferAllocator(allocator);
     }
 
     protected final boolean isAutoRead() {
