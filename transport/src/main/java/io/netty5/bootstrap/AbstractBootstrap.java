@@ -409,12 +409,14 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C, F>, C 
         }
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({ "unchecked", "rawtypes" })
     private static void setChannelOption(
-            Channel channel, ChannelOption<?> option, Object value, InternalLogger logger) {
+            Channel channel, ChannelOption option, Object value, InternalLogger logger) {
         try {
-            if (!channel.setOption((ChannelOption<Object>) option, value)) {
+            if (!channel.isSupportedOption(option)) {
                 logger.warn("Unknown channel option '{}' for channel '{}'", option, channel);
+            } else {
+                channel.setOption(option, value);
             }
         } catch (Throwable t) {
             logger.warn(

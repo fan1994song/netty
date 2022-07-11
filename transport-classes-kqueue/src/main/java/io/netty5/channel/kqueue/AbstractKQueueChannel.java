@@ -129,7 +129,7 @@ abstract class AbstractKQueueChannel<P extends UnixChannel, L extends SocketAddr
     }
 
     @Override
-    protected <T> boolean setExtendedOption(ChannelOption<T> option, T value) {
+    protected <T> void setExtendedOption(ChannelOption<T> option, T value) {
         if (option == RCV_ALLOC_TRANSPORT_PROVIDES_GUESS) {
             setRcvAllocTransportProvidesGuess((Boolean) value);
         } else {
@@ -137,19 +137,27 @@ abstract class AbstractKQueueChannel<P extends UnixChannel, L extends SocketAddr
                 if (option instanceof IntegerUnixChannelOption) {
                     IntegerUnixChannelOption opt = (IntegerUnixChannelOption) option;
                     socket.setIntOpt(opt.level(), opt.optname(), (Integer) value);
-                    return true;
+                    return;
                 } else if (option instanceof RawUnixChannelOption) {
                     RawUnixChannelOption opt = (RawUnixChannelOption) option;
                     socket.setRawOpt(opt.level(), opt.optname(), (ByteBuffer) value);
-                    return true;
+                    return;
                 }
             } catch (IOException e) {
                 throw new ChannelException(e);
             }
-            return super.setExtendedOption(option, value);
+            super.setExtendedOption(option, value);
         }
+    }
 
-        return true;
+    @Override
+    protected boolean isSupportedExtendedOption(ChannelOption<?> option) {
+        if (option == RCV_ALLOC_TRANSPORT_PROVIDES_GUESS) {
+            return true;
+        } else if (option instanceof IntegerUnixChannelOption || option instanceof RawUnixChannelOption) {
+            return true;
+        }
+        return super.isSupportedExtendedOption(option);
     }
 
     protected void setMaxBytesPerGatheringWrite(long maxBytesPerGatheringWrite) {

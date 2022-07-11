@@ -30,7 +30,9 @@ import io.netty5.util.internal.UnstableApi;
 
 import java.io.IOException;
 import java.net.SocketAddress;
+import java.util.Set;
 
+import static io.netty5.channel.ChannelOption.DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION;
 import static io.netty5.channel.ChannelOption.SO_RCVBUF;
 import static io.netty5.channel.ChannelOption.SO_SNDBUF;
 import static io.netty5.channel.epoll.LinuxSocket.newSocketDomain;
@@ -57,6 +59,8 @@ import static java.util.Objects.requireNonNull;
 public final class EpollDomainSocketChannel
         extends AbstractEpollStreamChannel<UnixChannel, DomainSocketAddress, DomainSocketAddress>
         implements DomainSocketChannel {
+
+    private static final Set<ChannelOption<?>> SUPPORTED_OPTIONS = supportedOptions();
     private volatile DomainSocketAddress local;
     private volatile DomainSocketAddress remote;
 
@@ -98,7 +102,7 @@ public final class EpollDomainSocketChannel
     }
 
     @Override
-    protected <T> boolean setExtendedOption(ChannelOption<T> option, T value) {
+    protected <T> void setExtendedOption(ChannelOption<T> option, T value) {
         if (option == DOMAIN_SOCKET_READ_MODE) {
             setReadMode((DomainSocketReadMode) value);
         } else if (option == SO_SNDBUF) {
@@ -106,10 +110,20 @@ public final class EpollDomainSocketChannel
         } else if (option == SO_RCVBUF) {
             setReceiveBufferSize((Integer) value);
         } else {
-            return super.setExtendedOption(option, value);
+            super.setExtendedOption(option, value);
         }
+    }
 
-        return true;
+    @Override
+    protected boolean isSupportedExtendedOption(ChannelOption<?> option) {
+        if (SUPPORTED_OPTIONS.contains(option)) {
+            return true;
+        }
+        return super.isSupportedExtendedOption(option);
+    }
+
+    private static Set<ChannelOption<?>> supportedOptions() {
+        return newSupportedIdentityOptionsSet(DOMAIN_SOCKET_READ_MODE, SO_SNDBUF, SO_RCVBUF);
     }
 
     private void setReadMode(DomainSocketReadMode mode) {

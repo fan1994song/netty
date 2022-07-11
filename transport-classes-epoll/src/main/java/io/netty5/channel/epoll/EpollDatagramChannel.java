@@ -57,6 +57,7 @@ import java.net.ProtocolFamily;
 import java.net.SocketAddress;
 import java.net.StandardProtocolFamily;
 import java.net.SocketException;
+import java.util.Set;
 
 import static io.netty5.channel.epoll.LinuxSocket.newSocketDgram;
 import static java.util.Objects.requireNonNull;
@@ -97,6 +98,7 @@ public final class EpollDatagramChannel extends AbstractEpollChannel<UnixChannel
             StringUtil.simpleClassName(InetSocketAddress.class) + ">, " +
             StringUtil.simpleClassName(Buffer.class) + ')';
 
+    private static final Set<ChannelOption<?>> SUPPORTED_OPTIONS = supportedOptions();
     private volatile boolean activeOnOpen;
     private volatile int maxDatagramSize;
     private volatile boolean gro;
@@ -785,12 +787,12 @@ public final class EpollDatagramChannel extends AbstractEpollChannel<UnixChannel
         if (option == EpollChannelOption.UDP_GRO) {
             return (T) Boolean.valueOf(isUdpGro());
         }
-        return super.getOption(option);
+        return super.getExtendedOption(option);
     }
 
     @Override
     @SuppressWarnings("deprecation")
-    protected  <T> boolean setExtendedOption(ChannelOption<T> option, T value) {
+    protected <T> void setExtendedOption(ChannelOption<T> option, T value) {
         if (option == ChannelOption.SO_BROADCAST) {
             setBroadcast((Boolean) value);
         } else if (option == ChannelOption.SO_RCVBUF) {
@@ -824,10 +826,27 @@ public final class EpollDatagramChannel extends AbstractEpollChannel<UnixChannel
         } else if (option == EpollChannelOption.UDP_GRO) {
             setUdpGro((Boolean) value);
         } else {
-            return super.setOption(option, value);
+            super.setExtendedOption(option, value);
         }
+    }
 
-        return true;
+    private static Set<ChannelOption<?>> supportedOptions() {
+        return newSupportedIdentityOptionsSet(
+                ChannelOption.SO_BROADCAST, ChannelOption.SO_RCVBUF, ChannelOption.SO_SNDBUF,
+                ChannelOption.SO_REUSEADDR, ChannelOption.IP_MULTICAST_LOOP_DISABLED, ChannelOption.IP_MULTICAST_ADDR,
+                ChannelOption.IP_MULTICAST_IF, ChannelOption.IP_MULTICAST_TTL, ChannelOption.IP_TOS,
+                ChannelOption.DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION, UnixChannelOption.SO_REUSEPORT,
+                EpollChannelOption.IP_FREEBIND, EpollChannelOption.IP_TRANSPARENT,
+                EpollChannelOption.IP_RECVORIGDSTADDR, EpollChannelOption.MAX_DATAGRAM_PAYLOAD_SIZE,
+                EpollChannelOption.UDP_GRO);
+    }
+
+    @Override
+    protected boolean isSupportedExtendedOption(ChannelOption<?> option) {
+        if (SUPPORTED_OPTIONS.contains(option)) {
+            return true;
+        }
+        return super.isSupportedExtendedOption(option);
     }
 
     private void setActiveOnOpen(boolean activeOnOpen) {

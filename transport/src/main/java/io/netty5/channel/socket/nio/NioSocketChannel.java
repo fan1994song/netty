@@ -39,6 +39,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
 import java.nio.channels.spi.SelectorProvider;
+import java.util.Set;
 import java.util.concurrent.Executor;
 
 import static io.netty5.channel.ChannelOption.ALLOW_HALF_CLOSURE;
@@ -61,6 +62,8 @@ public class NioSocketChannel
 
     private static final Method OPEN_SOCKET_CHANNEL_WITH_FAMILY =
             SelectorProviderUtil.findOpenMethod("openSocketChannel");
+
+    private static final Set<ChannelOption<?>> SUPPORTED_OPTIONS = supportedOptions();
 
     private static SocketChannel newChannel(SelectorProvider provider, ProtocolFamily family) {
         try {
@@ -355,7 +358,7 @@ public class NioSocketChannel
     }
 
     @Override
-    protected <T> boolean setExtendedOption(ChannelOption<T> option, T value) {
+    protected <T> void setExtendedOption(ChannelOption<T> option, T value) {
         if (option == SO_RCVBUF) {
             setReceiveBufferSize((Integer) value);
         } else if (option == SO_SNDBUF) {
@@ -371,11 +374,28 @@ public class NioSocketChannel
         } else if (option == IP_TOS) {
             setTrafficClass((Integer) value);
         } else if (option instanceof NioChannelOption) {
-            return NioChannelOption.setOption(javaChannel(), (NioChannelOption<T>) option, value);
+            NioChannelOption.setOption(javaChannel(), (NioChannelOption<T>) option, value);
         } else {
-            return super.setExtendedOption(option, value);
+            super.setExtendedOption(option, value);
         }
-        return true;
+    }
+
+    @Override
+    protected boolean isSupportedExtendedOption(ChannelOption<?> option) {
+        if (option instanceof NioChannelOption) {
+            return NioChannelOption.isSupported(javaChannel(), (NioChannelOption<?>) option);
+        }
+        if (SUPPORTED_OPTIONS.contains(option)) {
+            return true;
+        }
+        return super.isSupportedExtendedOption(option);
+    }
+
+    private static Set<ChannelOption<?>> supportedOptions() {
+        return newSupportedIdentityOptionsSet(
+                ChannelOption.SO_RCVBUF, ChannelOption.SO_SNDBUF, ChannelOption.TCP_NODELAY,
+                ChannelOption.SO_KEEPALIVE, ChannelOption.SO_REUSEADDR, ChannelOption.SO_LINGER,
+                ChannelOption.IP_TOS);
     }
 
     private int getReceiveBufferSize() {

@@ -33,10 +33,10 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public abstract class AbstractNioChannelTest<T extends AbstractNioChannel<?, ?, ?>> {
 
@@ -75,7 +75,7 @@ public abstract class AbstractNioChannelTest<T extends AbstractNioChannel<?, ?, 
         T channel = newNioChannel(eventLoopGroup);
         try {
             ChannelOption option = NioChannelOption.of(newInvalidOption());
-            assertFalse(channel.setOption(option, new Object()));
+            assertThrows(UnsupportedOperationException.class, () -> channel.setOption(option, new Object()));
             assertNull(channel.getOption(option));
         } finally {
             channel.close().asStage().sync();

@@ -145,21 +145,32 @@ public interface Channel extends AttributeMap, ChannelOutboundInvoker, Comparabl
      * @return                                  the value for the {@link ChannelOption}
      * @param <T>                               the type of the value.
      * @throws ChannelException                 thrown on error.
+     * @throws UnsupportedOperationException    if the {@link ChannelOption} is not supported.
      */
     <T> T getOption(ChannelOption<T> option);
 
     /**
      * Sets a configuration property with the specified name and value.
-     * To override this method properly, you must call the super class:
      *
      * @param option                            the {@link ChannelOption}.
      * @param value                             the value for the {@link ChannelOption}
-     * @return                                  {@code} true if the option could be set,
-     *                                          {@code false} otherwise.
+     * @return                                  itself.
      * @param <T>                               the type of the value.
      * @throws ChannelException                 thrown on error.
+     * @throws UnsupportedOperationException    if the {@link ChannelOption} is not supported.
      */
-    <T> boolean setOption(ChannelOption<T> option, T value);
+    <T> Channel setOption(ChannelOption<T> option, T value);
+
+    /**
+     * Returns {@code true} if the given {@link ChannelOption} is supported by this {@link Channel} implementation.
+     * If this methods returns {@code false}, calls to {@link #setOption(ChannelOption, Object)}
+     * and {@link #getOption(ChannelOption)} with the {@link ChannelOption} will throw an
+     * {@link UnsupportedOperationException}.
+     *
+     * @param option    the option.
+     * @return          {@code} true if supported, {@code false} otherwise.
+     */
+    boolean isSupportedOption(ChannelOption<?> option);
 
     /**
      * Returns {@code true} if the {@link Channel} is open and may get active later

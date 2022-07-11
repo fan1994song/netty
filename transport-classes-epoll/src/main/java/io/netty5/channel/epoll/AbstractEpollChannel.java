@@ -580,21 +580,29 @@ abstract class AbstractEpollChannel<P extends UnixChannel, L extends SocketAddre
     }
 
     @Override
-    protected <T> boolean setExtendedOption(ChannelOption<T> option, T value) {
+    protected <T> void setExtendedOption(ChannelOption<T> option, T value) {
         try {
             if (option instanceof IntegerUnixChannelOption) {
                 IntegerUnixChannelOption opt = (IntegerUnixChannelOption) option;
                 socket.setIntOpt(opt.level(), opt.optname(), (Integer) value);
-                return true;
+                return;
             } else if (option instanceof RawUnixChannelOption) {
                 RawUnixChannelOption opt = (RawUnixChannelOption) option;
                 socket.setRawOpt(opt.level(), opt.optname(), (ByteBuffer) value);
-                return true;
+                return;
             }
         } catch (IOException e) {
             throw new ChannelException(e);
         }
-        return super.setExtendedOption(option, value);
+        super.setExtendedOption(option, value);
+    }
+
+    @Override
+    protected boolean isSupportedExtendedOption(ChannelOption<?> option) {
+        if (option instanceof IntegerUnixChannelOption || option instanceof RawUnixChannelOption) {
+            return true;
+        }
+        return super.isSupportedExtendedOption(option);
     }
 
     @Override

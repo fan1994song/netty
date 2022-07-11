@@ -30,7 +30,9 @@ import io.netty5.util.internal.UnstableApi;
 
 import java.io.IOException;
 import java.net.SocketAddress;
+import java.util.Set;
 
+import static io.netty5.channel.ChannelOption.DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION;
 import static io.netty5.channel.ChannelOption.SO_RCVBUF;
 import static io.netty5.channel.ChannelOption.SO_SNDBUF;
 import static io.netty5.channel.kqueue.BsdSocket.newSocketDomain;
@@ -60,6 +62,7 @@ public final class KQueueDomainSocketChannel
         extends AbstractKQueueStreamChannel<UnixChannel, DomainSocketAddress, DomainSocketAddress>
         implements DomainSocketChannel {
 
+    private static final Set<ChannelOption<?>> SUPPORTED_OPTIONS = supportedOptions();
     private volatile DomainSocketAddress local;
     private volatile DomainSocketAddress remote;
     private volatile DomainSocketReadMode mode = DomainSocketReadMode.BYTES;
@@ -92,7 +95,7 @@ public final class KQueueDomainSocketChannel
     }
 
     @Override
-    public <T> boolean setExtendedOption(ChannelOption<T> option, T value) {
+    public <T> void setExtendedOption(ChannelOption<T> option, T value) {
         validate(option, value);
 
         if (option == DOMAIN_SOCKET_READ_MODE) {
@@ -102,10 +105,21 @@ public final class KQueueDomainSocketChannel
         } else if (option == SO_RCVBUF) {
             setReceiveBufferSize((Integer) value);
         } else {
-            return super.setExtendedOption(option, value);
+            super.setExtendedOption(option, value);
         }
+    }
 
-        return true;
+    @Override
+    protected boolean isSupportedExtendedOption(ChannelOption<?> option) {
+        if (SUPPORTED_OPTIONS.contains(option)) {
+            return true;
+        }
+        return super.isSupportedExtendedOption(option);
+    }
+
+    @SuppressWarnings("deprecation")
+    private static Set<ChannelOption<?>> supportedOptions() {
+        return newSupportedIdentityOptionsSet(DOMAIN_SOCKET_READ_MODE, SO_SNDBUF, SO_RCVBUF);
     }
 
     private void setReadMode(DomainSocketReadMode mode) {

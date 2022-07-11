@@ -61,6 +61,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static io.netty5.channel.ChannelOption.DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION;
 import static io.netty5.channel.ChannelOption.IP_MULTICAST_ADDR;
@@ -87,6 +88,7 @@ public final class NioDatagramChannel
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(NioDatagramChannel.class);
 
     private static final ChannelMetadata METADATA = new ChannelMetadata(true);
+    private static final Set<ChannelOption<?>> SUPPORTED_OPTIONS = supportedOptions();
     private static final SelectorProvider DEFAULT_SELECTOR_PROVIDER = SelectorProvider.provider();
     private static final String EXPECTED_TYPES =
             " (expected: " + StringUtil.simpleClassName(DatagramPacket.class) + ", " +
@@ -203,7 +205,7 @@ public final class NioDatagramChannel
     }
 
     @Override
-    protected <T> boolean setExtendedOption(ChannelOption<T> option, T value) {
+    protected <T> void setExtendedOption(ChannelOption<T> option, T value) {
         if (option == SO_BROADCAST) {
             setBroadcast((Boolean) value);
         } else if (option == SO_RCVBUF) {
@@ -225,12 +227,24 @@ public final class NioDatagramChannel
         } else if (option == DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION) {
             setActiveOnOpen((Boolean) value);
         } else if (option instanceof NioChannelOption) {
-            return NioChannelOption.setOption(javaChannel(), (NioChannelOption<T>) option, value);
+            NioChannelOption.setOption(javaChannel(), (NioChannelOption<T>) option, value);
         } else {
-            return super.setOption(option, value);
+            super.setExtendedOption(option, value);
         }
+    }
 
-        return true;
+    @Override
+    protected boolean isSupportedExtendedOption(ChannelOption<?> option) {
+        if (SUPPORTED_OPTIONS.contains(option)) {
+            return true;
+        }
+        return super.isSupportedExtendedOption(option);
+    }
+
+    private static Set<ChannelOption<?>> supportedOptions() {
+        return newSupportedIdentityOptionsSet(
+                SO_BROADCAST, SO_RCVBUF, SO_SNDBUF, SO_REUSEADDR, IP_MULTICAST_LOOP_DISABLED, IP_MULTICAST_ADDR,
+                IP_MULTICAST_IF, IP_MULTICAST_TTL, IP_TOS, DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION);
     }
 
     private DatagramSocket socket() {

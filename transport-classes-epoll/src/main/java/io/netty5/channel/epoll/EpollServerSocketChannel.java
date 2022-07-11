@@ -32,6 +32,7 @@ import java.net.SocketAddress;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Set;
 
 import static io.netty5.channel.ChannelOption.SO_BACKLOG;
 import static io.netty5.channel.ChannelOption.SO_RCVBUF;
@@ -64,6 +65,8 @@ import static io.netty5.util.internal.ObjectUtil.checkPositiveOrZero;
 public final class EpollServerSocketChannel
         extends AbstractEpollServerChannel<UnixChannel, SocketAddress, SocketAddress>
         implements ServerSocketChannel {
+
+    private static final Set<ChannelOption<?>> SUPPORTED_OPTIONS = supportedOptions();
 
     private volatile int backlog = NetUtil.SOMAXCONN;
     private volatile int pendingFastOpenRequestsThreshold;
@@ -104,7 +107,7 @@ public final class EpollServerSocketChannel
     }
 
     @Override
-    protected <T> boolean setExtendedOption(ChannelOption<T> option, T value) {
+    protected <T> void setExtendedOption(ChannelOption<T> option, T value) {
         if (option == SO_RCVBUF) {
             setReceiveBufferSize((Integer) value);
         } else if (option == SO_REUSEADDR) {
@@ -114,10 +117,20 @@ public final class EpollServerSocketChannel
         } else if (option == TCP_FASTOPEN) {
             setTcpFastopen((Integer) value);
         } else {
-            return super.setExtendedOption(option, value);
+            super.setExtendedOption(option, value);
         }
+    }
 
-        return true;
+    @Override
+    protected boolean isSupportedExtendedOption(ChannelOption<?> option) {
+        if (SUPPORTED_OPTIONS.contains(option)) {
+            return true;
+        }
+        return super.isSupportedExtendedOption(option);
+    }
+
+    private static Set<ChannelOption<?>> supportedOptions() {
+        return newSupportedIdentityOptionsSet(SO_RCVBUF, SO_REUSEADDR, SO_BACKLOG, TCP_FASTOPEN);
     }
 
     private boolean isReuseAddress() {

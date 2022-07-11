@@ -33,6 +33,7 @@ import java.net.SocketAddress;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Executor;
 
 import static io.netty5.channel.ChannelOption.IP_TOS;
@@ -82,6 +83,8 @@ import static io.netty5.channel.epoll.Native.IS_SUPPORTING_TCP_FASTOPEN_CLIENT;
 public final class EpollSocketChannel
         extends AbstractEpollStreamChannel<EpollServerSocketChannel, SocketAddress, SocketAddress>
         implements SocketChannel {
+
+    private static final Set<ChannelOption<?>> SUPPORTED_OPTIONS = supportedOptions();
     private volatile Collection<InetAddress> tcpMd5SigAddresses = Collections.emptyList();
     private volatile boolean tcpFastopen;
 
@@ -165,7 +168,7 @@ public final class EpollSocketChannel
 
     @SuppressWarnings("unchecked")
     @Override
-    protected <T> boolean setExtendedOption(ChannelOption<T> option, T value) {
+    protected <T> void setExtendedOption(ChannelOption<T> option, T value) {
         if (option == SO_RCVBUF) {
             setReceiveBufferSize((Integer) value);
         } else if (option == SO_SNDBUF) {
@@ -205,10 +208,25 @@ public final class EpollSocketChannel
         } else if (option == EpollChannelOption.SO_BUSY_POLL) {
             setSoBusyPoll((Integer) value);
         } else {
-            return super.setExtendedOption(option, value);
+            super.setExtendedOption(option, value);
         }
+    }
 
-        return true;
+    @Override
+    protected boolean isSupportedExtendedOption(ChannelOption<?> option) {
+        if (SUPPORTED_OPTIONS.contains(option)) {
+            return true;
+        }
+        return super.isSupportedExtendedOption(option);
+    }
+
+    private static Set<ChannelOption<?>> supportedOptions() {
+        return newSupportedIdentityOptionsSet(SO_RCVBUF, SO_SNDBUF, TCP_NODELAY, SO_KEEPALIVE, SO_REUSEADDR, SO_LINGER,
+                IP_TOS, EpollChannelOption.TCP_CORK, EpollChannelOption.TCP_NOTSENT_LOWAT,
+                EpollChannelOption.TCP_KEEPIDLE, EpollChannelOption.TCP_KEEPCNT, EpollChannelOption.TCP_KEEPINTVL,
+                EpollChannelOption.TCP_USER_TIMEOUT, EpollChannelOption.IP_TRANSPARENT,
+                EpollChannelOption.TCP_MD5SIG, EpollChannelOption.TCP_QUICKACK, ChannelOption.TCP_FASTOPEN_CONNECT,
+                EpollChannelOption.SO_BUSY_POLL);
     }
 
     private int getReceiveBufferSize() {

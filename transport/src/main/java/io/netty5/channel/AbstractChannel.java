@@ -37,7 +37,11 @@ import java.net.SocketException;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.ConnectionPendingException;
 import java.nio.channels.NotYetConnectedException;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -69,6 +73,8 @@ public abstract class AbstractChannel<P extends Channel, L extends SocketAddress
     private static final MessageSizeEstimator DEFAULT_MSG_SIZE_ESTIMATOR = DefaultMessageSizeEstimator.DEFAULT;
 
     private static final int DEFAULT_CONNECT_TIMEOUT = 30000;
+
+    private static final Set<ChannelOption<?>> SUPPORTED_CHANNEL_OPTIONS = supportedOptions();
 
     private final P parent;
     private final ChannelId id;
@@ -1329,13 +1335,22 @@ public abstract class AbstractChannel<P extends Channel, L extends SocketAddress
         return getExtendedOption(option);
     }
 
+    /**
+     * Override to add support for more {@link ChannelOption}s.
+     * You need to also call {@link super} after handling the extra options.
+     *
+     * @param option    the {@link ChannelOption}.
+     * @return          the value for the option
+     * @param <T>       the value type.
+     * @throws UnsupportedOperationException    if the {@link ChannelOption} is not supported.
+     */
     protected  <T> T getExtendedOption(ChannelOption<T> option) {
-        return null;
+        throw new UnsupportedOperationException("ChannelOption not supported: " + option);
     }
 
     @Override
     @SuppressWarnings("deprecation")
-    public final <T> boolean setOption(ChannelOption<T> option, T value) {
+    public final <T> Channel setOption(ChannelOption<T> option, T value) {
         validate(option, value);
 
         if (option == AUTO_READ) {
@@ -1361,14 +1376,56 @@ public abstract class AbstractChannel<P extends Channel, L extends SocketAddress
         } else if (option == ALLOW_HALF_CLOSURE) {
             setAllowHalfClosure((Boolean) value);
         } else {
-            return setExtendedOption(option, value);
+            setExtendedOption(option, value);
         }
 
-        return true;
+        return this;
     }
 
-    protected <T> boolean setExtendedOption(ChannelOption<T> option, T value) {
+    /**
+     * Override to add support for more {@link ChannelOption}s.
+     * You need to also call {@link super} after handling the extra options.
+     *
+     * @param option    the {@link ChannelOption}.
+     * @param <T>       the value type.
+     * @throws UnsupportedOperationException    if the {@link ChannelOption} is not supported.
+     */
+    protected <T> void setExtendedOption(ChannelOption<T> option, T value) {
+        throw new UnsupportedOperationException("ChannelOption not supported: " + option);
+    }
+
+    @Override
+    public final boolean isSupportedOption(ChannelOption<?> option) {
+        if (SUPPORTED_CHANNEL_OPTIONS.contains(option)) {
+            return true;
+        }
+        return isSupportedExtendedOption(option);
+    }
+
+    /**
+     * Override to add support for more {@link ChannelOption}s.
+     * You need to also call {@link super} after handling the extra options.
+     *
+     * @param option    the {@link ChannelOption}.
+     * @return          {@code true} if supported, {@code false} otherwise.
+     */
+    protected boolean isSupportedExtendedOption(ChannelOption<?> option) {
         return false;
+    }
+
+    private static Set<ChannelOption<?>> supportedOptions() {
+        return newSupportedIdentityOptionsSet(
+                AUTO_READ, WRITE_BUFFER_WATER_MARK, CONNECT_TIMEOUT_MILLIS, MAX_MESSAGES_PER_READ,
+                WRITE_SPIN_COUNT, BUFFER_ALLOCATOR, RCVBUF_ALLOCATOR, MESSAGE_SIZE_ESTIMATOR,
+                MAX_MESSAGES_PER_WRITE, ALLOW_HALF_CLOSURE);
+    }
+
+    protected static Set<ChannelOption<?>> newSupportedIdentityOptionsSet(ChannelOption<?>... options) {
+        Map<ChannelOption<?>, Boolean> supportedOptionsMap = new IdentityHashMap<>();
+        for (ChannelOption<?> option: options) {
+            supportedOptionsMap.put(option, true);
+        }
+        return Collections.newSetFromMap(supportedOptionsMap);
     }
 
     protected <T> void validate(ChannelOption<T> option, T value) {

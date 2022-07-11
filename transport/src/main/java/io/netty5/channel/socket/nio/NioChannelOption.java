@@ -47,27 +47,20 @@ public final class NioChannelOption<T> extends ChannelOption<T> {
     }
 
     // Internal helper methods to remove code duplication between Nio*Channel implementations.
-    static <T> boolean setOption(NetworkChannel channel, NioChannelOption<T> option, T value) {
-        if (!channel.supportedOptions().contains(option.option)) {
-            return false;
-        }
+    static <T> void setOption(NetworkChannel channel, NioChannelOption<T> option, T value) {
         if (channel instanceof ServerSocketChannel && option.option == java.net.StandardSocketOptions.IP_TOS) {
             // Skip IP_TOS as a workaround for a JDK bug:
             // See https://mail.openjdk.java.net/pipermail/nio-dev/2018-August/005365.html
-            return false;
+            return;
         }
         try {
             channel.setOption(option.option, value);
-            return true;
         } catch (IOException e) {
             throw new ChannelException(e);
         }
     }
 
     static <T> T getOption(NetworkChannel channel, NioChannelOption<T> option) {
-        if (!channel.supportedOptions().contains(option.option)) {
-            return null;
-        }
         if (channel instanceof ServerSocketChannel && option.option == java.net.StandardSocketOptions.IP_TOS) {
             // Skip IP_TOS as a workaround for a JDK bug:
             // See https://mail.openjdk.java.net/pipermail/nio-dev/2018-August/005365.html
@@ -78,6 +71,10 @@ public final class NioChannelOption<T> extends ChannelOption<T> {
         } catch (IOException e) {
             throw new ChannelException(e);
         }
+    }
+
+    static boolean isSupported(NetworkChannel channel, NioChannelOption<?> option) {
+        return channel.supportedOptions().contains(option.option);
     }
 
     @SuppressWarnings("unchecked")

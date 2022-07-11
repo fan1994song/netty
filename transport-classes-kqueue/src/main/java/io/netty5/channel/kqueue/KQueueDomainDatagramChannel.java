@@ -42,6 +42,7 @@ import io.netty5.util.internal.logging.InternalLoggerFactory;
 
 import java.io.IOException;
 import java.net.SocketAddress;
+import java.util.Set;
 
 import static io.netty5.channel.ChannelOption.DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION;
 import static io.netty5.channel.ChannelOption.SO_SNDBUF;
@@ -68,6 +69,7 @@ public final class KQueueDomainDatagramChannel
         extends AbstractKQueueDatagramChannel<UnixChannel, DomainSocketAddress, DomainSocketAddress>
         implements DomainDatagramChannel {
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(KQueueDomainDatagramChannel.class);
+    private static final Set<ChannelOption<?>> SUPPORTED_OPTIONS = supportedOptions();
     private static final String EXPECTED_TYPES =
             " (expected: " +
                     StringUtil.simpleClassName(DomainDatagramPacket.class) + ", " +
@@ -108,7 +110,7 @@ public final class KQueueDomainDatagramChannel
 
     @Override
     @SuppressWarnings("deprecation")
-    protected <T> boolean setExtendedOption(ChannelOption<T> option, T value) {
+    protected <T> void setExtendedOption(ChannelOption<T> option, T value) {
         validate(option, value);
 
         if (option == DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION) {
@@ -116,10 +118,21 @@ public final class KQueueDomainDatagramChannel
         } else if (option == SO_SNDBUF) {
             setSendBufferSize((Integer) value);
         } else {
-            return super.setExtendedOption(option, value);
+            super.setExtendedOption(option, value);
         }
+    }
 
-        return true;
+    @Override
+    protected boolean isSupportedExtendedOption(ChannelOption<?> option) {
+        if (SUPPORTED_OPTIONS.contains(option)) {
+            return true;
+        }
+        return super.isSupportedExtendedOption(option);
+    }
+
+    @SuppressWarnings("deprecation")
+    private static Set<ChannelOption<?>> supportedOptions() {
+        return newSupportedIdentityOptionsSet(SO_SNDBUF, DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION);
     }
 
     private void setSendBufferSize(int sendBufferSize) {

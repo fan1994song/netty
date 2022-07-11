@@ -32,6 +32,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.ProtocolFamily;
 import java.net.SocketAddress;
+import java.util.Set;
 import java.util.concurrent.Executor;
 
 import static io.netty5.channel.ChannelOption.IP_TOS;
@@ -67,6 +68,7 @@ import static io.netty5.channel.kqueue.KQueueChannelOption.TCP_NOPUSH;
 public final class KQueueSocketChannel
         extends AbstractKQueueStreamChannel<KQueueServerSocketChannel, SocketAddress, SocketAddress>
         implements SocketChannel {
+    private static final Set<ChannelOption<?>> SUPPORTED_OPTIONS = supportedOptions();
     private volatile boolean tcpFastopen;
 
     public KQueueSocketChannel(EventLoop eventLoop) {
@@ -135,7 +137,7 @@ public final class KQueueSocketChannel
     }
 
     @Override
-    protected <T> boolean setExtendedOption(ChannelOption<T> option, T value) {
+    protected <T> void setExtendedOption(ChannelOption<T> option, T value) {
         if (option == SO_RCVBUF) {
             setReceiveBufferSize((Integer) value);
         } else if (option == SO_SNDBUF) {
@@ -157,10 +159,22 @@ public final class KQueueSocketChannel
         } else if (option == ChannelOption.TCP_FASTOPEN_CONNECT) {
             setTcpFastOpenConnect((Boolean) value);
         } else {
-            return super.setExtendedOption(option, value);
+            super.setExtendedOption(option, value);
         }
+    }
 
-        return true;
+    @Override
+    protected boolean isSupportedExtendedOption(ChannelOption<?> option) {
+        if (SUPPORTED_OPTIONS.contains(option)) {
+            return true;
+        }
+        return super.isSupportedExtendedOption(option);
+    }
+
+    private static Set<ChannelOption<?>> supportedOptions() {
+        return newSupportedIdentityOptionsSet(SO_RCVBUF, SO_SNDBUF, TCP_NODELAY,
+                SO_KEEPALIVE, SO_REUSEADDR, SO_LINGER, IP_TOS, SO_SNDLOWAT, TCP_NOPUSH,
+                ChannelOption.TCP_FASTOPEN_CONNECT);
     }
 
     private int getReceiveBufferSize() {

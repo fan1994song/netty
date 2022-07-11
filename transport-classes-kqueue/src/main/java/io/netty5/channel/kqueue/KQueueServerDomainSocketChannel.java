@@ -31,11 +31,14 @@ import io.netty5.util.internal.logging.InternalLoggerFactory;
 import java.io.File;
 import java.io.IOException;
 import java.net.SocketAddress;
+import java.util.Set;
 
 import static io.netty5.channel.ChannelOption.SO_BACKLOG;
 import static io.netty5.channel.ChannelOption.SO_RCVBUF;
 import static io.netty5.channel.ChannelOption.SO_REUSEADDR;
+import static io.netty5.channel.ChannelOption.SO_SNDBUF;
 import static io.netty5.channel.kqueue.BsdSocket.newSocketDomain;
+import static io.netty5.channel.unix.UnixChannelOption.DOMAIN_SOCKET_READ_MODE;
 import static io.netty5.util.internal.ObjectUtil.checkPositiveOrZero;
 
 /**
@@ -60,6 +63,7 @@ public final class KQueueServerDomainSocketChannel
         implements ServerDomainSocketChannel {
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(
             KQueueServerDomainSocketChannel.class);
+    private static final Set<ChannelOption<?>> SUPPORTED_OPTIONS = supportedOptions();
 
     private volatile DomainSocketAddress local;
     private volatile int backlog = NetUtil.SOMAXCONN;
@@ -93,7 +97,7 @@ public final class KQueueServerDomainSocketChannel
     }
 
     @Override
-    protected <T> boolean setExtendedOption(ChannelOption<T> option, T value) {
+    protected <T> void setExtendedOption(ChannelOption<T> option, T value) {
         if (option == SO_RCVBUF) {
             setReceiveBufferSize((Integer) value);
         } else if (option == SO_REUSEADDR) {
@@ -101,10 +105,20 @@ public final class KQueueServerDomainSocketChannel
         } else if (option == SO_BACKLOG) {
             setBacklog((Integer) value);
         } else {
-            return super.setExtendedOption(option, value);
+            super.setExtendedOption(option, value);
         }
+    }
 
-        return true;
+    @Override
+    protected boolean isSupportedExtendedOption(ChannelOption<?> option) {
+        if (SUPPORTED_OPTIONS.contains(option)) {
+            return true;
+        }
+        return super.isSupportedExtendedOption(option);
+    }
+
+    private static Set<ChannelOption<?>> supportedOptions() {
+        return newSupportedIdentityOptionsSet(SO_RCVBUF, SO_REUSEADDR, SO_BACKLOG);
     }
 
     private boolean isReuseAddress() {

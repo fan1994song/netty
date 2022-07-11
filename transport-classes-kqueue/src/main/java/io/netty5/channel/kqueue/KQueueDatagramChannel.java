@@ -47,6 +47,7 @@ import java.net.PortUnreachableException;
 import java.net.ProtocolFamily;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
+import java.util.Set;
 
 import static io.netty5.channel.ChannelOption.DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION;
 import static io.netty5.channel.ChannelOption.IP_TOS;
@@ -81,6 +82,7 @@ public final class KQueueDatagramChannel
         extends AbstractKQueueDatagramChannel<UnixChannel, SocketAddress, SocketAddress>
         implements DatagramChannel {
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(KQueueDatagramChannel.class);
+    private static final Set<ChannelOption<?>> SUPPORTED_OPTIONS = supportedOptions();
     private static final String EXPECTED_TYPES =
             " (expected: " + StringUtil.simpleClassName(DatagramPacket.class) + ", " +
                     StringUtil.simpleClassName(AddressedEnvelope.class) + '<' +
@@ -134,7 +136,7 @@ public final class KQueueDatagramChannel
 
     @Override
     @SuppressWarnings("deprecation")
-    protected  <T> boolean setExtendedOption(ChannelOption<T> option, T value) {
+    protected  <T> void setExtendedOption(ChannelOption<T> option, T value) {
         if (option == SO_BROADCAST) {
             setBroadcast((Boolean) value);
         } else if (option == SO_RCVBUF) {
@@ -150,10 +152,22 @@ public final class KQueueDatagramChannel
         } else if (option == SO_REUSEPORT) {
             setReusePort((Boolean) value);
         } else {
-            return super.setExtendedOption(option, value);
+            super.setExtendedOption(option, value);
         }
+    }
 
-        return true;
+    @Override
+    protected boolean isSupportedExtendedOption(ChannelOption<?> option) {
+        if (SUPPORTED_OPTIONS.contains(option)) {
+            return true;
+        }
+        return super.isSupportedExtendedOption(option);
+    }
+
+    @SuppressWarnings("deprecation")
+    private static Set<ChannelOption<?>> supportedOptions() {
+        return newSupportedIdentityOptionsSet(SO_BROADCAST, SO_RCVBUF, SO_SNDBUF, SO_REUSEADDR, IP_TOS,
+                DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION, SO_REUSEPORT);
     }
 
     private void setActiveOnOpen(boolean activeOnOpen) {

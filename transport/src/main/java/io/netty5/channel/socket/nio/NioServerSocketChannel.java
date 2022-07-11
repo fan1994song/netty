@@ -40,6 +40,7 @@ import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.nio.channels.spi.SelectorProvider;
 import java.util.List;
+import java.util.Set;
 
 import static io.netty5.channel.ChannelOption.SO_BACKLOG;
 import static io.netty5.channel.ChannelOption.SO_RCVBUF;
@@ -55,6 +56,7 @@ public class NioServerSocketChannel extends AbstractNioMessageChannel<Channel, S
 
     private static final ChannelMetadata METADATA = new ChannelMetadata(false, 16);
     private static final SelectorProvider DEFAULT_SELECTOR_PROVIDER = SelectorProvider.provider();
+    private static final Set<ChannelOption<?>> SUPPORTED_OPTIONS = supportedOptions();
 
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(NioServerSocketChannel.class);
 
@@ -120,6 +122,7 @@ public class NioServerSocketChannel extends AbstractNioMessageChannel<Channel, S
         return isOpen() && javaChannel().socket().isBound();
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     protected <T> T getExtendedOption(ChannelOption<T> option) {
         if (option == SO_RCVBUF) {
@@ -138,7 +141,7 @@ public class NioServerSocketChannel extends AbstractNioMessageChannel<Channel, S
     }
 
     @Override
-    protected <T> boolean setExtendedOption(ChannelOption<T> option, T value) {
+    protected <T> void setExtendedOption(ChannelOption<T> option, T value) {
         if (option == SO_RCVBUF) {
             setReceiveBufferSize((Integer) value);
         } else if (option == SO_REUSEADDR) {
@@ -146,11 +149,26 @@ public class NioServerSocketChannel extends AbstractNioMessageChannel<Channel, S
         } else if (option == SO_BACKLOG) {
             setBacklog((Integer) value);
         } else if (option instanceof NioChannelOption) {
-            return NioChannelOption.setOption(javaChannel(), (NioChannelOption<T>) option, value);
+            NioChannelOption.setOption(javaChannel(), (NioChannelOption<T>) option, value);
         } else {
-            return super.setExtendedOption(option, value);
+            super.setExtendedOption(option, value);
         }
-        return true;
+    }
+
+    @Override
+    protected boolean isSupportedExtendedOption(ChannelOption<?> option) {
+        if (option instanceof NioChannelOption) {
+            return NioChannelOption.isSupported(javaChannel(), (NioChannelOption<?>) option);
+        }
+        if (SUPPORTED_OPTIONS.contains(option)) {
+            return true;
+        }
+        return super.isSupportedExtendedOption(option);
+    }
+
+    private static Set<ChannelOption<?>> supportedOptions() {
+        return newSupportedIdentityOptionsSet(
+                SO_RCVBUF, SO_REUSEADDR, SO_BACKLOG);
     }
 
     private boolean isReuseAddress() {

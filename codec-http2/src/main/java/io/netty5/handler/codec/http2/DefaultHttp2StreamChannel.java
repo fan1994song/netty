@@ -1034,7 +1034,7 @@ final class DefaultHttp2StreamChannel extends DefaultAttributeMap implements Htt
 
     @Override
     @SuppressWarnings("deprecation")
-    public <T> boolean setOption(ChannelOption<T> option, T value) {
+    public <T> Channel setOption(ChannelOption<T> option, T value) {
         validate(option, value);
 
         if (option == AUTO_READ) {
@@ -1054,15 +1054,21 @@ final class DefaultHttp2StreamChannel extends DefaultAttributeMap implements Htt
         } else if (option == AUTO_CLOSE) {
             setAutoClose((Boolean) value);
         } else if (option == MESSAGE_SIZE_ESTIMATOR) {
-            return false;
+            return this;
         } else if (option == MAX_MESSAGES_PER_WRITE) {
             setMaxMessagesPerWrite((Integer) value);
         } else if (option == ALLOW_HALF_CLOSURE) {
             setAllowHalfClosure((Boolean) value);
-        } else {
-            return false;
         }
-        return true;
+        return this;
+    }
+
+    @Override
+    public boolean isSupportedOption(ChannelOption<?> option) {
+        return option == AUTO_READ || option == WRITE_BUFFER_WATER_MARK || option == CONNECT_TIMEOUT_MILLIS ||
+                option == MAX_MESSAGES_PER_READ || option == WRITE_SPIN_COUNT || option == BUFFER_ALLOCATOR ||
+                option == RCVBUF_ALLOCATOR || option == AUTO_CLOSE || option == MESSAGE_SIZE_ESTIMATOR ||
+                option == MAX_MESSAGES_PER_WRITE || option == ALLOW_HALF_CLOSURE;
     }
 
     private int getConnectTimeoutMillis() {

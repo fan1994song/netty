@@ -46,9 +46,20 @@ import io.netty5.util.internal.logging.InternalLoggerFactory;
 
 import java.io.IOException;
 import java.net.SocketAddress;
+import java.util.Set;
 
+import static io.netty5.channel.ChannelOption.ALLOW_HALF_CLOSURE;
+import static io.netty5.channel.ChannelOption.AUTO_READ;
+import static io.netty5.channel.ChannelOption.BUFFER_ALLOCATOR;
+import static io.netty5.channel.ChannelOption.CONNECT_TIMEOUT_MILLIS;
 import static io.netty5.channel.ChannelOption.DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION;
+import static io.netty5.channel.ChannelOption.MAX_MESSAGES_PER_READ;
+import static io.netty5.channel.ChannelOption.MAX_MESSAGES_PER_WRITE;
+import static io.netty5.channel.ChannelOption.MESSAGE_SIZE_ESTIMATOR;
+import static io.netty5.channel.ChannelOption.RCVBUF_ALLOCATOR;
 import static io.netty5.channel.ChannelOption.SO_SNDBUF;
+import static io.netty5.channel.ChannelOption.WRITE_BUFFER_WATER_MARK;
+import static io.netty5.channel.ChannelOption.WRITE_SPIN_COUNT;
 import static io.netty5.channel.epoll.LinuxSocket.newSocketDomainDgram;
 import static io.netty5.util.CharsetUtil.UTF_8;
 
@@ -76,6 +87,8 @@ public final class EpollDomainDatagramChannel
         implements DomainDatagramChannel {
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(EpollDomainDatagramChannel.class);
     private static final ChannelMetadata METADATA = new ChannelMetadata(true);
+
+    private static final Set<ChannelOption<?>> SUPPORTED_OPTIONS = supportedOptions();
     private static final String EXPECTED_TYPES =
             " (expected: " +
                     StringUtil.simpleClassName(DomainDatagramPacket.class) + ", " +
@@ -117,18 +130,28 @@ public final class EpollDomainDatagramChannel
 
     @Override
     @SuppressWarnings("deprecation")
-    protected <T> boolean setExtendedOption(ChannelOption<T> option, T value) {
-        validate(option, value);
-
+    protected <T> void setExtendedOption(ChannelOption<T> option, T value) {
         if (option == DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION) {
             setActiveOnOpen((Boolean) value);
         } else if (option == SO_SNDBUF) {
             setSendBufferSize((Integer) value);
         } else {
-            return super.setExtendedOption(option, value);
+            super.setExtendedOption(option, value);
         }
+    }
 
-        return true;
+    @Override
+    protected boolean isSupportedExtendedOption(ChannelOption<?> option) {
+        if (SUPPORTED_OPTIONS.contains(option)) {
+            return true;
+        }
+        return super.isSupportedExtendedOption(option);
+    }
+
+    @SuppressWarnings("deprecation")
+    private static Set<ChannelOption<?>> supportedOptions() {
+        return newSupportedIdentityOptionsSet(
+                DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION, SO_SNDBUF);
     }
 
     private void setActiveOnOpen(boolean activeOnOpen) {
