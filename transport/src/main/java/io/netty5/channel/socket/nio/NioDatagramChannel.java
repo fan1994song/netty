@@ -17,6 +17,7 @@ package io.netty5.channel.socket.nio;
 
 import io.netty5.buffer.api.Buffer;
 import io.netty5.channel.ChannelShutdownDirection;
+import io.netty5.channel.FixedRecvBufferAllocator;
 import io.netty5.util.Resource;
 import io.netty5.buffer.api.WritableComponent;
 import io.netty5.buffer.api.WritableComponentProcessor;
@@ -32,30 +33,45 @@ import io.netty5.channel.RecvBufferAllocator;
 import io.netty5.channel.RecvBufferAllocator.Handle;
 import io.netty5.channel.nio.AbstractNioMessageChannel;
 import io.netty5.channel.socket.DatagramPacket;
-import io.netty5.channel.socket.DatagramChannelConfig;
 import io.netty5.util.UncheckedBooleanSupplier;
 import io.netty5.util.concurrent.Future;
+import io.netty5.util.internal.PlatformDependent;
 import io.netty5.util.internal.SocketUtils;
 import io.netty5.util.internal.StringUtil;
+import io.netty5.util.internal.logging.InternalLogger;
+import io.netty5.util.internal.logging.InternalLoggerFactory;
 
 import java.io.IOException;
+import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
 import java.net.ProtocolFamily;
 import java.net.SocketAddress;
 import java.net.SocketException;
+import java.net.StandardSocketOptions;
 import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
 import java.nio.channels.MembershipKey;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.spi.SelectorProvider;
 import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import static io.netty5.channel.ChannelOption.DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION;
+import static io.netty5.channel.ChannelOption.IP_MULTICAST_ADDR;
+import static io.netty5.channel.ChannelOption.IP_MULTICAST_IF;
+import static io.netty5.channel.ChannelOption.IP_MULTICAST_LOOP_DISABLED;
+import static io.netty5.channel.ChannelOption.IP_MULTICAST_TTL;
+import static io.netty5.channel.ChannelOption.IP_TOS;
+import static io.netty5.channel.ChannelOption.SO_BROADCAST;
+import static io.netty5.channel.ChannelOption.SO_RCVBUF;
+import static io.netty5.channel.ChannelOption.SO_REUSEADDR;
+import static io.netty5.channel.ChannelOption.SO_SNDBUF;
 import static java.util.Objects.requireNonNull;
 
 /**
@@ -68,6 +84,7 @@ import static java.util.Objects.requireNonNull;
 public final class NioDatagramChannel
         extends AbstractNioMessageChannel<Channel, SocketAddress, SocketAddress>
         implements io.netty5.channel.socket.DatagramChannel {
+    private static final InternalLogger logger = InternalLoggerFactory.getInstance(NioDatagramChannel.class);
 
     private static final ChannelMetadata METADATA = new ChannelMetadata(true);
     private static final SelectorProvider DEFAULT_SELECTOR_PROVIDER = SelectorProvider.provider();
@@ -78,11 +95,12 @@ public final class NioDatagramChannel
             StringUtil.simpleClassName(SocketAddress.class) + ">, " +
             StringUtil.simpleClassName(Buffer.class) + ')';
 
-    private final DatagramChannelConfig config;
     private volatile boolean inputShutdown;
     private volatile boolean outputShutdown;
 
     private Map<InetAddress, List<MembershipKey>> memberships;
+
+    private volatile boolean activeOnOpen;
 
     private static DatagramChannel newSocket(SelectorProvider provider) {
         try {
@@ -143,7 +161,248 @@ public final class NioDatagramChannel
      */
     public NioDatagramChannel(EventLoop eventLoop, DatagramChannel socket) {
         super(null, eventLoop, socket, SelectionKey.OP_READ);
-        config = new NioDatagramChannelConfig(this, socket);
+        setRecvBufferAllocator(new FixedRecvBufferAllocator(2048), metadata());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    protected <T> T getExtendedOption(ChannelOption<T> option) {
+        if (option == SO_BROADCAST) {
+            return (T) Boolean.valueOf(isBroadcast());
+        }
+        if (option == SO_RCVBUF) {
+            return (T) Integer.valueOf(getReceiveBufferSize());
+        }
+        if (option == SO_SNDBUF) {
+            return (T) Integer.valueOf(getSendBufferSize());
+        }
+        if (option == SO_REUSEADDR) {
+            return (T) Boolean.valueOf(isReuseAddress());
+        }
+        if (option == IP_MULTICAST_LOOP_DISABLED) {
+            return (T) Boolean.valueOf(isLoopbackModeDisabled());
+        }
+        if (option == IP_MULTICAST_ADDR) {
+            return (T) getInterface();
+        }
+        if (option == IP_MULTICAST_IF) {
+            return (T) getNetworkInterface();
+        }
+        if (option == IP_MULTICAST_TTL) {
+            return (T) Integer.valueOf(getTimeToLive());
+        }
+        if (option == IP_TOS) {
+            return (T) Integer.valueOf(getTrafficClass());
+        }
+        if (option == DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION) {
+            return (T) Boolean.valueOf(activeOnOpen);
+        }
+        if (option instanceof NioChannelOption) {
+            return NioChannelOption.getOption(javaChannel(), (NioChannelOption<T>) option);
+        }
+        return super.getExtendedOption(option);
+    }
+
+    @Override
+    protected <T> boolean setExtendedOption(ChannelOption<T> option, T value) {
+        if (option == SO_BROADCAST) {
+            setBroadcast((Boolean) value);
+        } else if (option == SO_RCVBUF) {
+            setReceiveBufferSize((Integer) value);
+        } else if (option == SO_SNDBUF) {
+            setSendBufferSize((Integer) value);
+        } else if (option == SO_REUSEADDR) {
+            setReuseAddress((Boolean) value);
+        } else if (option == IP_MULTICAST_LOOP_DISABLED) {
+            setLoopbackModeDisabled((Boolean) value);
+        } else if (option == IP_MULTICAST_ADDR) {
+            setInterface((InetAddress) value);
+        } else if (option == IP_MULTICAST_IF) {
+            setNetworkInterface((NetworkInterface) value);
+        } else if (option == IP_MULTICAST_TTL) {
+            setTimeToLive((Integer) value);
+        } else if (option == IP_TOS) {
+            setTrafficClass((Integer) value);
+        } else if (option == DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION) {
+            setActiveOnOpen((Boolean) value);
+        } else if (option instanceof NioChannelOption) {
+            return NioChannelOption.setOption(javaChannel(), (NioChannelOption<T>) option, value);
+        } else {
+            return super.setOption(option, value);
+        }
+
+        return true;
+    }
+
+    private DatagramSocket socket() {
+        return javaChannel().socket();
+    }
+
+    private void setActiveOnOpen(boolean activeOnOpen) {
+        if (isRegistered()) {
+            throw new IllegalStateException("Can only changed before channel was registered");
+        }
+        this.activeOnOpen = activeOnOpen;
+    }
+
+    private boolean isBroadcast() {
+        try {
+            return socket().getBroadcast();
+        } catch (SocketException e) {
+            throw new ChannelException(e);
+        }
+    }
+
+    private void setBroadcast(boolean broadcast) {
+        try {
+            // See: https://github.com/netty/netty/issues/576
+            if (broadcast &&
+                    !socket().getLocalAddress().isAnyLocalAddress() &&
+                    !PlatformDependent.isWindows() && !PlatformDependent.maybeSuperUser()) {
+                // Warn a user about the fact that a non-root user can't receive a
+                // broadcast packet on *nix if the socket is bound on non-wildcard address.
+                logger.warn(
+                        "A non-root user can't receive a broadcast packet if the socket " +
+                                "is not bound to a wildcard address; setting the SO_BROADCAST flag " +
+                                "anyway as requested on the socket which is bound to " +
+                                socket().getLocalSocketAddress() + '.');
+            }
+
+            socket().setBroadcast(broadcast);
+        } catch (SocketException e) {
+            throw new ChannelException(e);
+        }
+    }
+
+    private int getTimeToLive() {
+        try {
+            return javaChannel().getOption(StandardSocketOptions.IP_MULTICAST_TTL);
+        } catch (IOException e) {
+            throw new ChannelException(e);
+        }
+    }
+
+    private void setTimeToLive(int ttl) {
+        try {
+            javaChannel().setOption(StandardSocketOptions.IP_MULTICAST_TTL, ttl);
+        } catch (IOException e) {
+            throw new ChannelException(e);
+        }
+    }
+
+    private InetAddress getInterface() {
+        NetworkInterface inf = getNetworkInterface();
+        if (inf != null) {
+            Enumeration<InetAddress> addresses = SocketUtils.addressesFromNetworkInterface(inf);
+            if (addresses.hasMoreElements()) {
+                return addresses.nextElement();
+            }
+        }
+        return null;
+    }
+
+    private void setInterface(InetAddress interfaceAddress) {
+        try {
+            setNetworkInterface(NetworkInterface.getByInetAddress(interfaceAddress));
+        } catch (SocketException e) {
+            throw new ChannelException(e);
+        }
+    }
+
+    private NetworkInterface getNetworkInterface() {
+        try {
+            return javaChannel().getOption(StandardSocketOptions.IP_MULTICAST_IF);
+        } catch (IOException e) {
+            throw new ChannelException(e);
+        }
+    }
+
+    private void setNetworkInterface(NetworkInterface networkInterface) {
+        try {
+            javaChannel().setOption(StandardSocketOptions.IP_MULTICAST_IF, networkInterface);
+        } catch (IOException e) {
+            throw new ChannelException(e);
+        }
+    }
+
+    private boolean isLoopbackModeDisabled() {
+        try {
+            return javaChannel().getOption(StandardSocketOptions.IP_MULTICAST_LOOP);
+        } catch (IOException e) {
+            throw new ChannelException(e);
+        }
+    }
+
+    private void setLoopbackModeDisabled(boolean loopbackModeDisabled) {
+        try {
+            javaChannel().setOption(StandardSocketOptions.IP_MULTICAST_LOOP, loopbackModeDisabled);
+        } catch (IOException e) {
+            throw new ChannelException(e);
+        }
+    }
+
+    private boolean isReuseAddress() {
+        try {
+            return socket().getReuseAddress();
+        } catch (SocketException e) {
+            throw new ChannelException(e);
+        }
+    }
+
+    public void setReuseAddress(boolean reuseAddress) {
+        try {
+            socket().setReuseAddress(reuseAddress);
+        } catch (SocketException e) {
+            throw new ChannelException(e);
+        }
+    }
+
+    public int getReceiveBufferSize() {
+        try {
+            return socket().getReceiveBufferSize();
+        } catch (SocketException e) {
+            throw new ChannelException(e);
+        }
+    }
+
+    private void setReceiveBufferSize(int receiveBufferSize) {
+        try {
+            socket().setReceiveBufferSize(receiveBufferSize);
+        } catch (SocketException e) {
+            throw new ChannelException(e);
+        }
+    }
+
+    private int getSendBufferSize() {
+        try {
+            return socket().getSendBufferSize();
+        } catch (SocketException e) {
+            throw new ChannelException(e);
+        }
+    }
+
+    private void setSendBufferSize(int sendBufferSize) {
+        try {
+            socket().setSendBufferSize(sendBufferSize);
+        } catch (SocketException e) {
+            throw new ChannelException(e);
+        }
+    }
+
+    private int getTrafficClass() {
+        try {
+            return socket().getTrafficClass();
+        } catch (SocketException e) {
+            throw new ChannelException(e);
+        }
+    }
+
+    private void setTrafficClass(int trafficClass) {
+        try {
+            socket().setTrafficClass(trafficClass);
+        } catch (SocketException e) {
+            throw new ChannelException(e);
+        }
     }
 
     @Override
@@ -181,16 +440,10 @@ public final class NioDatagramChannel
     }
 
     @Override
-    public DatagramChannelConfig config() {
-        return config;
-    }
-
-    @Override
     @SuppressWarnings("deprecation")
     public boolean isActive() {
         DatagramChannel ch = javaChannel();
-        return ch.isOpen() && (
-                config.getOption(ChannelOption.DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION) && isRegistered()
+        return ch.isOpen() && (getOption(ChannelOption.DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION) && isRegistered()
                 || ch.socket().isBound());
     }
 
@@ -260,7 +513,7 @@ public final class NioDatagramChannel
     }
 
     private int doReadBufferMessages(Handle allocHandle, List<Object> buf) throws IOException {
-        Buffer data = allocHandle.allocate(config.getBufferAllocator());
+        Buffer data = allocHandle.allocate(bufferAllocator());
         allocHandle.attemptedBytesRead(data.writableBytes());
         boolean free = true;
         try {
@@ -370,7 +623,7 @@ public final class NioDatagramChannel
     }
 
     private NetworkInterface networkInterface() throws SocketException {
-        NetworkInterface iface = config.getNetworkInterface();
+        NetworkInterface iface = getNetworkInterface();
         if (iface == null) {
             SocketAddress localAddress = localAddress();
             if (localAddress instanceof InetSocketAddress) {
@@ -526,7 +779,7 @@ public final class NioDatagramChannel
     protected boolean continueReading(RecvBufferAllocator.Handle allocHandle) {
         // We use the TRUE_SUPPLIER as it is also ok to read less then what we did try to read (as long
         // as we read anything).
-        return allocHandle.continueReading(UncheckedBooleanSupplier.TRUE_SUPPLIER);
+        return allocHandle.continueReading(isAutoRead(), UncheckedBooleanSupplier.TRUE_SUPPLIER);
     }
 
     private static final class ReceiveDatagram implements WritableComponentProcessor<IOException> {

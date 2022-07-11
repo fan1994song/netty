@@ -15,6 +15,8 @@
  */
 package io.netty5.channel;
 
+import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.DefaultBufferAllocators;
 import io.netty5.util.Resource;
 import io.netty5.util.DefaultAttributeMap;
 import io.netty5.util.concurrent.DefaultPromise;
@@ -40,7 +42,21 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
+import static io.netty5.channel.ChannelOption.ALLOW_HALF_CLOSURE;
+import static io.netty5.channel.ChannelOption.AUTO_CLOSE;
+import static io.netty5.channel.ChannelOption.AUTO_READ;
+import static io.netty5.channel.ChannelOption.BUFFER_ALLOCATOR;
+import static io.netty5.channel.ChannelOption.CONNECT_TIMEOUT_MILLIS;
+import static io.netty5.channel.ChannelOption.MAX_MESSAGES_PER_READ;
+import static io.netty5.channel.ChannelOption.MAX_MESSAGES_PER_WRITE;
+import static io.netty5.channel.ChannelOption.MESSAGE_SIZE_ESTIMATOR;
+import static io.netty5.channel.ChannelOption.RCVBUF_ALLOCATOR;
+import static io.netty5.channel.ChannelOption.WRITE_BUFFER_WATER_MARK;
+import static io.netty5.channel.ChannelOption.WRITE_SPIN_COUNT;
+import static io.netty5.util.internal.ObjectUtil.checkPositive;
+import static io.netty5.util.internal.ObjectUtil.checkPositiveOrZero;
 import static java.util.Objects.requireNonNull;
 
 /**
@@ -50,6 +66,9 @@ public abstract class AbstractChannel<P extends Channel, L extends SocketAddress
         extends DefaultAttributeMap implements Channel {
 
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(AbstractChannel.class);
+    private static final MessageSizeEstimator DEFAULT_MSG_SIZE_ESTIMATOR = DefaultMessageSizeEstimator.DEFAULT;
+
+    private static final int DEFAULT_CONNECT_TIMEOUT = 30000;
 
     private final P parent;
     private final ChannelId id;
@@ -70,6 +89,26 @@ public abstract class AbstractChannel<P extends Channel, L extends SocketAddress
     private volatile L localAddress;
     private volatile R remoteAddress;
     private volatile boolean registered;
+
+    private static final AtomicIntegerFieldUpdater<AbstractChannel> AUTOREAD_UPDATER =
+            AtomicIntegerFieldUpdater.newUpdater(AbstractChannel.class, "autoRead");
+    private static final AtomicReferenceFieldUpdater<AbstractChannel, WriteBufferWaterMark> WATERMARK_UPDATER =
+            AtomicReferenceFieldUpdater.newUpdater(
+                    AbstractChannel.class, WriteBufferWaterMark.class, "writeBufferWaterMark");
+
+    private volatile BufferAllocator bufferAllocator = DefaultBufferAllocators.preferredAllocator();
+    private volatile RecvBufferAllocator rcvBufAllocator;
+    private volatile MessageSizeEstimator msgSizeEstimator = DEFAULT_MSG_SIZE_ESTIMATOR;
+
+    private volatile int connectTimeoutMillis = DEFAULT_CONNECT_TIMEOUT;
+    private volatile int writeSpinCount = 16;
+    private volatile int maxMessagesPerWrite = Integer.MAX_VALUE;
+
+    @SuppressWarnings("FieldMayBeFinal")
+    private volatile int autoRead = 1;
+    private volatile boolean autoClose = true;
+    private volatile WriteBufferWaterMark writeBufferWaterMark = WriteBufferWaterMark.DEFAULT;
+    private volatile boolean allowHalfClosure;
 
     // All fields below are only called from within the EventLoop thread.
     private boolean closeInitiated;
@@ -115,6 +154,7 @@ public abstract class AbstractChannel<P extends Channel, L extends SocketAddress
         this.id = id;
         pipeline = newChannelPipeline();
         fireChannelWritabilityChangedTask = () -> pipeline().fireChannelWritabilityChanged();
+        setRecvBufferAllocator(new AdaptiveRecvBufferAllocator(), metadata());
     }
 
     protected static <T extends EventLoopGroup> T validateEventLoopGroup(
@@ -137,6 +177,11 @@ public abstract class AbstractChannel<P extends Channel, L extends SocketAddress
      */
     protected ChannelPipeline newChannelPipeline() {
         return new DefaultAbstractChannelPipeline(this);
+    }
+
+    @Override
+    public BufferAllocator bufferAllocator() {
+        return bufferAllocator;
     }
 
     @Override
@@ -212,7 +257,7 @@ public abstract class AbstractChannel<P extends Channel, L extends SocketAddress
             return 0;
         }
 
-        long bytes = config().getWriteBufferWaterMark().high() -
+        long bytes = writeBufferWaterMark.high() -
                 totalPending;
         // If bytes is negative we know we are not writable.
         if (bytes > 0) {
@@ -296,7 +341,7 @@ public abstract class AbstractChannel<P extends Channel, L extends SocketAddress
     protected final void readIfIsAutoRead() {
         assertEventLoop();
 
-        if (config().isAutoRead() || readBeforeActive) {
+        if (isAutoRead() || readBeforeActive) {
             readBeforeActive = false;
             read();
         }
@@ -310,7 +355,7 @@ public abstract class AbstractChannel<P extends Channel, L extends SocketAddress
         assertEventLoop();
 
         if (recvHandle == null) {
-            recvHandle = config().getRecvBufferAllocator().newHandle();
+            recvHandle = getRecvBufferAllocator().newHandle();
         }
         return recvHandle;
     }
@@ -388,7 +433,7 @@ public abstract class AbstractChannel<P extends Channel, L extends SocketAddress
         }
 
         // See: https://github.com/netty/netty/issues/576
-        if (Boolean.TRUE.equals(config().getOption(ChannelOption.SO_BROADCAST)) &&
+        if (Boolean.TRUE.equals(getOption(ChannelOption.SO_BROADCAST)) &&
             localAddress instanceof InetSocketAddress &&
             !((InetSocketAddress) localAddress).getAddress().isAnyLocalAddress() &&
             !PlatformDependent.isWindows() && !PlatformDependent.maybeSuperUser()) {
@@ -458,11 +503,12 @@ public abstract class AbstractChannel<P extends Channel, L extends SocketAddress
 
     private void updateWritabilityIfNeeded(boolean notify, boolean notifyLater) {
         long totalPending = totalPending();
-        if (totalPending >  config().getWriteBufferWaterMark().high()) {
+
+        if (totalPending > writeBufferWaterMark.high()) {
             if (WRITABLE_UPDATER.compareAndSet(this, 1, 0)) {
                 fireChannelWritabilityChangedIfNeeded(notify, notifyLater);
             }
-        } else if (totalPending <  config().getWriteBufferWaterMark().low()) {
+        } else if (totalPending < writeBufferWaterMark.low()) {
             if (WRITABLE_UPDATER.compareAndSet(this, 0, 1)) {
                 fireChannelWritabilityChangedIfNeeded(notify, notifyLater);
             }
@@ -788,7 +834,7 @@ public abstract class AbstractChannel<P extends Channel, L extends SocketAddress
         try {
             msg = filterOutboundMessage(msg);
             if (estimatorHandler == null) {
-                estimatorHandler = config().getMessageSizeEstimator().newHandle();
+                estimatorHandler = getMessageSizeEstimator().newHandle();
             }
             size = estimatorHandler.size(msg);
             if (size < 0) {
@@ -873,7 +919,7 @@ public abstract class AbstractChannel<P extends Channel, L extends SocketAddress
     protected final void handleWriteError(Throwable t) {
         assertEventLoop();
 
-        if (t instanceof IOException && config().isAutoClose()) {
+        if (t instanceof IOException && isAutoClose()) {
             /*
              * Just call {@link #close(Promise, Throwable, boolean)} here which will take care of
              * failing all flushed messages and also ensure the actual close of the underlying transport
@@ -1099,7 +1145,7 @@ public abstract class AbstractChannel<P extends Channel, L extends SocketAddress
                 requestedRemoteAddress = (R) remoteAddress;
 
                 // Schedule connect timeout.
-                int connectTimeoutMillis = config().getConnectTimeoutMillis();
+                int connectTimeoutMillis = getConnectTimeoutMillis();
                 if (connectTimeoutMillis > 0) {
                     connectTimeoutFuture = executor().schedule(() -> {
                         Promise<Void> connectPromise = this.connectPromise;
@@ -1206,6 +1252,252 @@ public abstract class AbstractChannel<P extends Channel, L extends SocketAddress
 
     protected static void validateFileRegion(DefaultFileRegion region, long position) throws IOException {
         DefaultFileRegion.validate(region, position);
+    }
+
+    @Override
+    @SuppressWarnings({ "unchecked", "deprecation" })
+    public final <T> T getOption(ChannelOption<T> option) {
+        requireNonNull(option, "option");
+        if (option == AUTO_READ) {
+            return (T) Boolean.valueOf(isAutoRead());
+        }
+        if (option == WRITE_BUFFER_WATER_MARK) {
+            return (T) getWriteBufferWaterMark();
+        }
+        if (option == CONNECT_TIMEOUT_MILLIS) {
+            return (T) Integer.valueOf(getConnectTimeoutMillis());
+        }
+        if (option == MAX_MESSAGES_PER_READ) {
+            return (T) Integer.valueOf(getMaxMessagesPerRead());
+        }
+        if (option == WRITE_SPIN_COUNT) {
+            return (T) Integer.valueOf(getWriteSpinCount());
+        }
+        if (option == BUFFER_ALLOCATOR) {
+            return (T) getBufferAllocator();
+        }
+        if (option == RCVBUF_ALLOCATOR) {
+            return getRecvBufferAllocator();
+        }
+        if (option == AUTO_CLOSE) {
+            return (T) Boolean.valueOf(isAutoClose());
+        }
+        if (option == MESSAGE_SIZE_ESTIMATOR) {
+            return (T) getMessageSizeEstimator();
+        }
+        if (option == MAX_MESSAGES_PER_WRITE) {
+            return (T) Integer.valueOf(getMaxMessagesPerWrite());
+        }
+        if (option == ALLOW_HALF_CLOSURE) {
+            return (T) Boolean.valueOf(isAllowHalfClosure());
+        }
+
+        return getExtendedOption(option);
+    }
+
+    protected  <T> T getExtendedOption(ChannelOption<T> option) {
+        return null;
+    }
+
+    @Override
+    @SuppressWarnings("deprecation")
+    public final <T> boolean setOption(ChannelOption<T> option, T value) {
+        validate(option, value);
+
+        if (option == AUTO_READ) {
+            setAutoRead((Boolean) value);
+        } else if (option == WRITE_BUFFER_WATER_MARK) {
+            setWriteBufferWaterMark((WriteBufferWaterMark) value);
+        } else if (option == CONNECT_TIMEOUT_MILLIS) {
+            setConnectTimeoutMillis((Integer) value);
+        } else if (option == MAX_MESSAGES_PER_READ) {
+            setMaxMessagesPerRead((Integer) value);
+        } else if (option == WRITE_SPIN_COUNT) {
+            setWriteSpinCount((Integer) value);
+        } else if (option == BUFFER_ALLOCATOR) {
+            setBufferAllocator((BufferAllocator) value);
+        } else if (option == RCVBUF_ALLOCATOR) {
+            setRecvBufferAllocator((RecvBufferAllocator) value);
+        } else if (option == AUTO_CLOSE) {
+            setAutoClose((Boolean) value);
+        } else if (option == MESSAGE_SIZE_ESTIMATOR) {
+            setMessageSizeEstimator((MessageSizeEstimator) value);
+        } else if (option == MAX_MESSAGES_PER_WRITE) {
+            setMaxMessagesPerWrite((Integer) value);
+        } else if (option == ALLOW_HALF_CLOSURE) {
+            setAllowHalfClosure((Boolean) value);
+        } else {
+            return setExtendedOption(option, value);
+        }
+
+        return true;
+    }
+
+    protected <T> boolean setExtendedOption(ChannelOption<T> option, T value) {
+        return false;
+    }
+
+    protected <T> void validate(ChannelOption<T> option, T value) {
+        requireNonNull(option, "option");
+        option.validate(value);
+    }
+
+    private int getConnectTimeoutMillis() {
+        return connectTimeoutMillis;
+    }
+
+    private void setConnectTimeoutMillis(int connectTimeoutMillis) {
+        checkPositiveOrZero(connectTimeoutMillis, "connectTimeoutMillis");
+        this.connectTimeoutMillis = connectTimeoutMillis;
+    }
+
+    /**
+     * <p>
+     * @throws IllegalStateException if {@link #getRecvBufferAllocator()} does not return an object of type
+     * {@link MaxMessagesRecvBufferAllocator}.
+     */
+    @Deprecated
+    private int getMaxMessagesPerRead() {
+        try {
+            MaxMessagesRecvBufferAllocator allocator = getRecvBufferAllocator();
+            return allocator.maxMessagesPerRead();
+        } catch (ClassCastException e) {
+            throw new IllegalStateException("getRecvBufferAllocator() must return an object of type " +
+                    "MaxMessagesRecvBufferAllocator", e);
+        }
+    }
+
+    /**
+     * <p>
+     * @throws IllegalStateException if {@link #getRecvBufferAllocator()} does not return an object of type
+     * {@link MaxMessagesRecvBufferAllocator}.
+     */
+    @Deprecated
+    private void setMaxMessagesPerRead(int maxMessagesPerRead) {
+        try {
+            MaxMessagesRecvBufferAllocator allocator = getRecvBufferAllocator();
+            allocator.maxMessagesPerRead(maxMessagesPerRead);
+        } catch (ClassCastException e) {
+            throw new IllegalStateException("getRecvBufferAllocator() must return an object of type " +
+                    "MaxMessagesRecvBufferAllocator", e);
+        }
+    }
+
+    /**
+     * Get the maximum number of message to write per eventloop run. Once this limit is
+     * reached we will continue to process other events before trying to write the remaining messages.
+     */
+    protected final int getMaxMessagesPerWrite() {
+        return maxMessagesPerWrite;
+    }
+
+    /**
+     * Set the maximum number of message to write per eventloop run. Once this limit is
+     * reached we will continue to process other events before trying to write the remaining messages.
+     */
+    private void setMaxMessagesPerWrite(int maxMessagesPerWrite) {
+        this.maxMessagesPerWrite = checkPositive(maxMessagesPerWrite, "maxMessagesPerWrite");
+    }
+
+    protected final int getWriteSpinCount() {
+        return writeSpinCount;
+    }
+
+    private void setWriteSpinCount(int writeSpinCount) {
+        checkPositive(writeSpinCount, "writeSpinCount");
+        // Integer.MAX_VALUE is used as a special value in the channel implementations to indicate the channel cannot
+        // accept any more data, and results in the writeOp being set on the selector (or execute a runnable which tries
+        // to flush later because the writeSpinCount quantum has been exhausted). This strategy prevents additional
+        // conditional logic in the channel implementations, and shouldn't be noticeable in practice.
+        if (writeSpinCount == Integer.MAX_VALUE) {
+            --writeSpinCount;
+        }
+        this.writeSpinCount = writeSpinCount;
+    }
+
+    private BufferAllocator getBufferAllocator() {
+        return bufferAllocator;
+    }
+
+    public void setBufferAllocator(BufferAllocator bufferAllocator) {
+        requireNonNull(bufferAllocator, "bufferAllocator");
+        this.bufferAllocator = bufferAllocator;
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T extends RecvBufferAllocator> T getRecvBufferAllocator() {
+        return (T) rcvBufAllocator;
+    }
+
+    private void setRecvBufferAllocator(RecvBufferAllocator allocator) {
+        rcvBufAllocator = requireNonNull(allocator, "allocator");
+    }
+
+    /**
+     * Set the {@link RecvBufferAllocator} which is used for the channel to allocate receive buffers.
+     * @param allocator the allocator to set.
+     * @param metadata Used to set the {@link ChannelMetadata#defaultMaxMessagesPerRead()} if {@code allocator}
+     * is of type {@link MaxMessagesRecvBufferAllocator}.
+     */
+    protected final void setRecvBufferAllocator(RecvBufferAllocator allocator, ChannelMetadata metadata) {
+        requireNonNull(allocator, "allocator");
+        requireNonNull(metadata, "metadata");
+        if (allocator instanceof MaxMessagesRecvBufferAllocator) {
+            ((MaxMessagesRecvBufferAllocator) allocator).maxMessagesPerRead(metadata.defaultMaxMessagesPerRead());
+        }
+        setRecvBufferAllocator(allocator);
+    }
+
+    protected final boolean isAutoRead() {
+        return autoRead == 1;
+    }
+
+    private void setAutoRead(boolean autoRead) {
+        boolean oldAutoRead = AUTOREAD_UPDATER.getAndSet(this, autoRead ? 1 : 0) == 1;
+        if (autoRead && !oldAutoRead) {
+            read();
+        } else if (!autoRead && oldAutoRead) {
+            autoReadCleared();
+        }
+    }
+
+    /**
+     * Is called once {@link #setAutoRead(boolean)} is called with {@code false} and {@link #isAutoRead()} was
+     * {@code true} before.
+     */
+    protected void autoReadCleared() { }
+
+    private boolean isAutoClose() {
+        return autoClose;
+    }
+
+    private void setAutoClose(boolean autoClose) {
+        this.autoClose = autoClose;
+    }
+
+    private void setWriteBufferWaterMark(WriteBufferWaterMark writeBufferWaterMark) {
+        this.writeBufferWaterMark = requireNonNull(writeBufferWaterMark, "writeBufferWaterMark");
+    }
+
+    private WriteBufferWaterMark getWriteBufferWaterMark() {
+        return writeBufferWaterMark;
+    }
+
+    private MessageSizeEstimator getMessageSizeEstimator() {
+        return msgSizeEstimator;
+    }
+
+    private void setMessageSizeEstimator(MessageSizeEstimator estimator) {
+        requireNonNull(estimator, "estimator");
+        msgSizeEstimator = estimator;
+    }
+
+    protected final boolean isAllowHalfClosure() {
+        return allowHalfClosure;
+    }
+
+    private void setAllowHalfClosure(boolean allowHalfClosure) {
+        this.allowHalfClosure = allowHalfClosure;
     }
 
     private static final class ClosePromise extends DefaultPromise<Void> {

@@ -19,11 +19,13 @@ import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
 import io.netty5.buffer.api.DefaultBufferAllocators;
 import io.netty5.channel.AddressedEnvelope;
+import io.netty5.channel.ChannelException;
+import io.netty5.channel.ChannelOption;
 import io.netty5.channel.ChannelPipeline;
 import io.netty5.channel.DefaultBufferAddressedEnvelope;
 import io.netty5.channel.EventLoop;
+import io.netty5.channel.FixedRecvBufferAllocator;
 import io.netty5.channel.unix.DomainDatagramChannel;
-import io.netty5.channel.unix.DomainDatagramChannelConfig;
 import io.netty5.channel.unix.DomainDatagramPacket;
 import io.netty5.channel.unix.DomainDatagramSocketAddress;
 import io.netty5.channel.unix.DomainSocketAddress;
@@ -42,9 +44,26 @@ import io.netty5.util.internal.logging.InternalLoggerFactory;
 import java.io.IOException;
 import java.net.SocketAddress;
 
+import static io.netty5.channel.ChannelOption.DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION;
+import static io.netty5.channel.ChannelOption.SO_SNDBUF;
 import static io.netty5.channel.kqueue.BsdSocket.newSocketDomainDgram;
 import static io.netty5.util.CharsetUtil.UTF_8;
 
+/**
+ * {@link DomainDatagramChannel} implementation that uses Kqueue.
+ *
+ * <h3>Available options</h3>
+ *
+ * In addition to the options provided by {@link DomainDatagramChannel} and {@link UnixChannel},
+ * {@link KQueueDomainDatagramChannel} allows the following options in the option map:
+ * <table border="1" cellspacing="0" cellpadding="6">
+ * <tr>
+ * <th>Name</th>
+ * </tr><tr>
+ * <td>{@link KQueueChannelOption#RCV_ALLOC_TRANSPORT_PROVIDES_GUESS}</td>
+ * </tr>
+ * </table>
+ */
 @UnstableApi
 public final class KQueueDomainDatagramChannel
         extends AbstractKQueueDatagramChannel<UnixChannel, DomainSocketAddress, DomainSocketAddress>
@@ -62,7 +81,7 @@ public final class KQueueDomainDatagramChannel
     private volatile DomainSocketAddress local;
     private volatile DomainSocketAddress remote;
 
-    private final KQueueDomainDatagramChannelConfig config;
+    private boolean activeOnOpen;
 
     public KQueueDomainDatagramChannel(EventLoop eventLoop) {
         this(eventLoop, newSocketDomainDgram(), false);
@@ -74,12 +93,62 @@ public final class KQueueDomainDatagramChannel
 
     private KQueueDomainDatagramChannel(EventLoop eventLoop, BsdSocket socket, boolean active) {
         super(null, eventLoop, socket, active);
-        config = new KQueueDomainDatagramChannelConfig(this);
+        setRecvBufferAllocator(new FixedRecvBufferAllocator(2048), metadata());
     }
 
     @Override
-    public KQueueDomainDatagramChannelConfig config() {
-        return config;
+    @SuppressWarnings({"unchecked", "deprecation"})
+    protected <T> T getExtendedOption(ChannelOption<T> option) {
+        if (option == DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION) {
+            return (T) Boolean.valueOf(activeOnOpen);
+        }
+        if (option == SO_SNDBUF) {
+            return (T) Integer.valueOf(getSendBufferSize());
+        }
+        return super.getExtendedOption(option);
+    }
+
+    @Override
+    @SuppressWarnings("deprecation")
+    protected <T> boolean setExtendedOption(ChannelOption<T> option, T value) {
+        validate(option, value);
+
+        if (option == DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION) {
+            setActiveOnOpen((Boolean) value);
+        } else if (option == SO_SNDBUF) {
+            setSendBufferSize((Integer) value);
+        } else {
+            return super.setExtendedOption(option, value);
+        }
+
+        return true;
+    }
+
+    private void setSendBufferSize(int sendBufferSize) {
+        try {
+            socket.setSendBufferSize(sendBufferSize);
+        } catch (IOException e) {
+            throw new ChannelException(e);
+        }
+    }
+
+    private int getSendBufferSize() {
+        try {
+            return socket.getSendBufferSize();
+        } catch (IOException e) {
+            throw new ChannelException(e);
+        }
+    }
+
+    private void setActiveOnOpen(boolean activeOnOpen) {
+        if (isRegistered()) {
+            throw new IllegalStateException("Can only changed before channel was registered");
+        }
+        this.activeOnOpen = activeOnOpen;
+    }
+
+    private boolean getActiveOnOpen() {
+        return activeOnOpen;
     }
 
     @Override
@@ -213,7 +282,7 @@ public final class KQueueDomainDatagramChannel
 
     @Override
     public boolean isActive() {
-        return socket.isOpen() && (config.getActiveOnOpen() && isRegistered() || active);
+        return socket.isOpen() && (getActiveOnOpen() && isRegistered() || active);
     }
 
     @Override
@@ -242,13 +311,12 @@ public final class KQueueDomainDatagramChannel
     @Override
     void readReady(KQueueRecvBufferAllocatorHandle allocHandle) {
         assert executor().inEventLoop();
-        final DomainDatagramChannelConfig config = config();
-        if (shouldBreakReadReady(config)) {
+        if (shouldBreakReadReady()) {
             clearReadFilter0();
             return;
         }
         final ChannelPipeline pipeline = pipeline();
-        allocHandle.reset(config);
+        allocHandle.reset();
         readReadyBefore();
 
         try {
@@ -263,12 +331,12 @@ public final class KQueueDomainDatagramChannel
                 readIfIsAutoRead();
             }
         } finally {
-            readReadyFinally(config);
+            readReadyFinally();
         }
     }
 
     private Throwable doReadBuffer(KQueueRecvBufferAllocatorHandle allocHandle, ChannelPipeline pipeline) {
-        BufferAllocator allocator = config().getBufferAllocator();
+        BufferAllocator allocator = bufferAllocator();
         if (!allocator.getAllocationType().isDirect()) {
             allocator = DefaultBufferAllocators.offHeapAllocator();
         }
@@ -318,7 +386,7 @@ public final class KQueueDomainDatagramChannel
 
                 // We use the TRUE_SUPPLIER as it is also ok to read less then what we did try to read (as long
                 // as we read anything).
-            } while (allocHandle.continueReading(UncheckedBooleanSupplier.TRUE_SUPPLIER));
+            } while (allocHandle.continueReading(isAutoRead(), UncheckedBooleanSupplier.TRUE_SUPPLIER));
         } catch (Throwable t) {
             if (buf != null) {
                 buf.close();

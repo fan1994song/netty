@@ -20,7 +20,6 @@ import io.netty5.buffer.api.BufferAllocator;
 import io.netty5.channel.ChannelShutdownDirection;
 import io.netty5.util.Resource;
 import io.netty5.channel.Channel;
-import io.netty5.channel.ChannelConfig;
 import io.netty5.channel.ChannelMetadata;
 import io.netty5.channel.ChannelOutboundBuffer;
 import io.netty5.channel.ChannelPipeline;
@@ -28,7 +27,6 @@ import io.netty5.channel.EventLoop;
 import io.netty5.channel.FileRegion;
 import io.netty5.channel.RecvBufferAllocator;
 import io.netty5.channel.internal.ChannelUtils;
-import io.netty5.channel.socket.SocketChannelConfig;
 import io.netty5.util.internal.StringUtil;
 
 import java.io.IOException;
@@ -69,19 +67,14 @@ public abstract class AbstractNioByteChannel<P extends Channel, L extends Socket
         return METADATA;
     }
 
-    final boolean shouldBreakReadReady(ChannelConfig config) {
+    final boolean shouldBreakReadReady() {
         return isShutdown(ChannelShutdownDirection.Inbound) &&
-                (inputClosedSeenErrorOnRead || !isAllowHalfClosure(config));
+                (inputClosedSeenErrorOnRead || !isAllowHalfClosure());
     }
 
-    private static boolean isAllowHalfClosure(ChannelConfig config) {
-        return config instanceof SocketChannelConfig &&
-                ((SocketChannelConfig) config).isAllowHalfClosure();
-    }
-
-    private void closeOnRead(ChannelPipeline pipeline) {
+    private void closeOnRead() {
         if (!isShutdown(ChannelShutdownDirection.Inbound)) {
-            if (isAllowHalfClosure(config())) {
+            if (isAllowHalfClosure()) {
                 shutdownTransport(ChannelShutdownDirection.Inbound, newPromise());
             } else {
                 closeTransport(newPromise());
@@ -106,7 +99,7 @@ public abstract class AbstractNioByteChannel<P extends Channel, L extends Socket
         // If oom will close the read event, release connection.
         // See https://github.com/netty/netty/issues/10434
         if (close || cause instanceof OutOfMemoryError || cause instanceof IOException) {
-            closeOnRead(pipeline);
+            closeOnRead();
         } else {
             readIfIsAutoRead();
         }
@@ -114,15 +107,14 @@ public abstract class AbstractNioByteChannel<P extends Channel, L extends Socket
 
     @Override
     protected final void readNow() {
-        final ChannelConfig config = config();
-        if (shouldBreakReadReady(config)) {
+        if (shouldBreakReadReady()) {
             clearReadPending();
             return;
         }
         final ChannelPipeline pipeline = pipeline();
-        final BufferAllocator bufferAllocator = config.getBufferAllocator();
+        final BufferAllocator bufferAllocator = bufferAllocator();
         final RecvBufferAllocator.Handle allocHandle = recvBufAllocHandle();
-        allocHandle.reset(config);
+        allocHandle.reset();
 
         Buffer buffer = null;
         boolean close = false;
@@ -146,13 +138,13 @@ public abstract class AbstractNioByteChannel<P extends Channel, L extends Socket
                 readPending = false;
                 pipeline.fireChannelRead(buffer);
                 buffer = null;
-            } while (allocHandle.continueReading() && !isShutdown(ChannelShutdownDirection.Inbound));
+            } while (allocHandle.continueReading(isAutoRead()) && !isShutdown(ChannelShutdownDirection.Inbound));
 
             allocHandle.readComplete();
             pipeline.fireChannelReadComplete();
 
             if (close) {
-                closeOnRead(pipeline);
+                closeOnRead();
             } else {
                 readIfIsAutoRead();
             }
@@ -165,7 +157,7 @@ public abstract class AbstractNioByteChannel<P extends Channel, L extends Socket
             // * The user called Channel.read() or ChannelHandlerContext.read() in channelReadComplete(...) method
             //
             // See https://github.com/netty/netty/issues/2254
-            if (!readPending && !config.isAutoRead()) {
+            if (!readPending && !isAutoRead()) {
                 removeReadOp();
             }
         }
@@ -234,7 +226,7 @@ public abstract class AbstractNioByteChannel<P extends Channel, L extends Socket
 
     @Override
     protected void doWrite(ChannelOutboundBuffer in) throws Exception {
-        int writeSpinCount = config().getWriteSpinCount();
+        int writeSpinCount = getWriteSpinCount();
         do {
             Object msg = in.current();
             if (msg == null) {

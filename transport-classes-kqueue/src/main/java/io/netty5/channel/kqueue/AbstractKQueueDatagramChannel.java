@@ -43,7 +43,7 @@ abstract class AbstractKQueueDatagramChannel<P extends UnixChannel, L extends So
 
     @Override
     protected void doWrite(ChannelOutboundBuffer in) throws Exception {
-        int maxMessagesPerWrite = config().getMaxMessagesPerWrite();
+        int maxMessagesPerWrite = getMaxMessagesPerWrite();
         while (maxMessagesPerWrite > 0) {
             Object msg = in.current();
             if (msg == null) {
@@ -52,7 +52,7 @@ abstract class AbstractKQueueDatagramChannel<P extends UnixChannel, L extends So
 
             try {
                 boolean done = false;
-                for (int i = config().getWriteSpinCount(); i > 0; --i) {
+                for (int i = getWriteSpinCount(); i > 0; --i) {
                     if (doWriteMessage(msg)) {
                         done = true;
                         break;

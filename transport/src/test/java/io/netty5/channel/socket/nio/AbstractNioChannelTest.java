@@ -38,7 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
-public abstract class AbstractNioChannelTest<T extends AbstractNioChannel> {
+public abstract class AbstractNioChannelTest<T extends AbstractNioChannel<?, ?, ?>> {
 
     protected abstract T newNioChannel(EventLoopGroup group);
 
@@ -54,13 +54,13 @@ public abstract class AbstractNioChannelTest<T extends AbstractNioChannel> {
             NetworkChannel jdkChannel = jdkChannel(channel);
             ChannelOption<Boolean> option = NioChannelOption.of(StandardSocketOptions.SO_REUSEADDR);
             boolean value1 = jdkChannel.getOption(StandardSocketOptions.SO_REUSEADDR);
-            boolean value2 = channel.config().getOption(option);
+            boolean value2 = channel.getOption(option);
 
             assertEquals(value1, value2);
 
-            channel.config().setOption(option, !value2);
+            channel.setOption(option, !value2);
             boolean value3 = jdkChannel.getOption(StandardSocketOptions.SO_REUSEADDR);
-            boolean value4 = channel.config().getOption(option);
+            boolean value4 = channel.getOption(option);
             assertEquals(value3, value4);
             assertNotEquals(value1, value4);
         } finally {
@@ -74,21 +74,9 @@ public abstract class AbstractNioChannelTest<T extends AbstractNioChannel> {
         EventLoopGroup eventLoopGroup = new MultithreadEventLoopGroup(1, NioHandler.newFactory());
         T channel = newNioChannel(eventLoopGroup);
         try {
-            ChannelOption<?> option = NioChannelOption.of(newInvalidOption());
-            assertFalse(channel.config().setOption(option, null));
-            assertNull(channel.config().getOption(option));
-        } finally {
-            channel.close().asStage().sync();
-            eventLoopGroup.shutdownGracefully();
-        }
-    }
-
-    @Test
-    public void testGetOptions() throws Exception {
-        EventLoopGroup eventLoopGroup = new MultithreadEventLoopGroup(1, NioHandler.newFactory());
-        T channel = newNioChannel(eventLoopGroup);
-        try {
-            channel.config().getOptions();
+            ChannelOption option = NioChannelOption.of(newInvalidOption());
+            assertFalse(channel.setOption(option, new Object()));
+            assertNull(channel.getOption(option));
         } finally {
             channel.close().asStage().sync();
             eventLoopGroup.shutdownGracefully();

@@ -18,16 +18,17 @@ package io.netty5.channel.epoll;
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
 import io.netty5.buffer.api.DefaultBufferAllocators;
+import io.netty5.channel.ChannelOption;
 import io.netty5.channel.ChannelShutdownDirection;
+import io.netty5.channel.unix.IntegerUnixChannelOption;
+import io.netty5.channel.unix.RawUnixChannelOption;
 import io.netty5.util.Resource;
 import io.netty5.channel.AbstractChannel;
-import io.netty5.channel.ChannelConfig;
 import io.netty5.channel.ChannelException;
 import io.netty5.channel.ChannelMetadata;
 import io.netty5.channel.ChannelOutboundBuffer;
 import io.netty5.channel.EventLoop;
 import io.netty5.channel.RecvBufferAllocator.Handle;
-import io.netty5.channel.socket.SocketChannelConfig;
 import io.netty5.channel.unix.FileDescriptor;
 import io.netty5.channel.unix.IovArray;
 import io.netty5.channel.unix.Socket;
@@ -36,6 +37,7 @@ import io.netty5.channel.unix.UnixChannel;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.nio.ByteBuffer;
 import java.nio.channels.AlreadyConnectedException;
 import java.nio.channels.UnresolvedAddressException;
 
@@ -138,9 +140,6 @@ abstract class AbstractEpollChannel<P extends UnixChannel, L extends SocketAddre
     }
 
     @Override
-    public abstract EpollChannelConfig config();
-
-    @Override
     public boolean isActive() {
         return active;
     }
@@ -202,20 +201,12 @@ abstract class AbstractEpollChannel<P extends UnixChannel, L extends SocketAddre
         // If EPOLL ET mode is enabled and auto read was toggled off on the last read loop then we may not be notified
         // again if we didn't consume all the data. So we force a read operation here if there maybe more data.
         if (maybeMoreDataToRead) {
-            executeEpollInReadyRunnable(config());
+            executeEpollInReadyRunnable();
         }
     }
 
-    final boolean shouldBreakEpollInReady(ChannelConfig config) {
-        return socket.isInputShutdown() && (inputClosedSeenErrorOnRead || !isAllowHalfClosure(config));
-    }
-
-    private static boolean isAllowHalfClosure(ChannelConfig config) {
-        if (config instanceof EpollDomainSocketChannelConfig) {
-            return ((EpollDomainSocketChannelConfig) config).isAllowHalfClosure();
-        }
-        return config instanceof SocketChannelConfig &&
-                ((SocketChannelConfig) config).isAllowHalfClosure();
+    final boolean shouldBreakEpollInReady() {
+        return socket.isInputShutdown() && (inputClosedSeenErrorOnRead || isAllowHalfClosure());
     }
 
     final void clearEpollIn() {
@@ -227,7 +218,7 @@ abstract class AbstractEpollChannel<P extends UnixChannel, L extends SocketAddre
             } else {
                 // schedule a task to clear the EPOLLIN as it is not safe to modify it directly
                 loop.execute(() -> {
-                    if (!readPending && !config().isAutoRead()) {
+                    if (!readPending && !isAutoRead()) {
                         // Still no read triggered so clear it now
                         clearEpollIn0();
                     }
@@ -344,7 +335,7 @@ abstract class AbstractEpollChannel<P extends UnixChannel, L extends SocketAddre
         maybeMoreDataToRead = false;
     }
 
-    final void epollInFinally(ChannelConfig config) {
+    final void epollInFinally() {
         maybeMoreDataToRead = allocHandle.maybeMoreDataToRead();
 
         if (allocHandle.isReceivedRdHup() || readPending && maybeMoreDataToRead) {
@@ -355,8 +346,8 @@ abstract class AbstractEpollChannel<P extends UnixChannel, L extends SocketAddre
             // autoRead is true the call to channelReadComplete would also call read, but maybeMoreDataToRead is set
             // to false before every read operation to prevent re-entry into epollInReady() we will not read from
             // the underlying OS again unless the user happens to call read again.
-            executeEpollInReadyRunnable(config);
-        } else if (!readPending && !config.isAutoRead()) {
+            executeEpollInReadyRunnable();
+        } else if (!readPending && !isAutoRead()) {
             // Check if there is a readPending which was not processed yet.
             // This could be for two reasons:
             // * The user called Channel.read() or ChannelHandlerContext.read() in channelRead(...) method
@@ -367,8 +358,8 @@ abstract class AbstractEpollChannel<P extends UnixChannel, L extends SocketAddre
         }
     }
 
-    final void executeEpollInReadyRunnable(ChannelConfig config) {
-        if (epollInReadyRunnablePending || !isActive() || shouldBreakEpollInReady(config)) {
+    final void executeEpollInReadyRunnable() {
+        if (epollInReadyRunnablePending || !isActive() || shouldBreakEpollInReady()) {
             return;
         }
         epollInReadyRunnablePending = true;
@@ -413,7 +404,7 @@ abstract class AbstractEpollChannel<P extends UnixChannel, L extends SocketAddre
      */
     void shutdownInput(boolean rdHup) {
         if (!socket.isInputShutdown()) {
-            if (isAllowHalfClosure(config())) {
+            if (isAllowHalfClosure()) {
                 clearEpollIn();
                 shutdownTransport(ChannelShutdownDirection.Inbound, newPromise());
             } else {
@@ -568,5 +559,48 @@ abstract class AbstractEpollChannel<P extends UnixChannel, L extends SocketAddre
 
     final void closeTransportNow() {
         closeTransport(newPromise());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    protected <T> T getExtendedOption(ChannelOption<T> option) {
+        try {
+            if (option instanceof IntegerUnixChannelOption) {
+                IntegerUnixChannelOption opt = (IntegerUnixChannelOption) option;
+                return (T) Integer.valueOf(socket.getIntOpt(opt.level(), opt.optname()));
+            }
+            if (option instanceof RawUnixChannelOption) {
+                RawUnixChannelOption opt = (RawUnixChannelOption) option;
+                ByteBuffer out = ByteBuffer.allocate(opt.length());
+                socket.getRawOpt(opt.level(), opt.optname(), out);
+                return (T) out.flip();
+            }
+        } catch (IOException e) {
+            throw new ChannelException(e);
+        }
+        return super.getExtendedOption(option);
+    }
+
+    @Override
+    protected <T> boolean setExtendedOption(ChannelOption<T> option, T value) {
+        try {
+            if (option instanceof IntegerUnixChannelOption) {
+                IntegerUnixChannelOption opt = (IntegerUnixChannelOption) option;
+                socket.setIntOpt(opt.level(), opt.optname(), (Integer) value);
+                return true;
+            } else if (option instanceof RawUnixChannelOption) {
+                RawUnixChannelOption opt = (RawUnixChannelOption) option;
+                socket.setRawOpt(opt.level(), opt.optname(), (ByteBuffer) value);
+                return true;
+            }
+        } catch (IOException e) {
+            throw new ChannelException(e);
+        }
+        return super.setExtendedOption(option, value);
+    }
+
+    @Override
+    protected final void autoReadCleared() {
+        clearEpollIn();
     }
 }

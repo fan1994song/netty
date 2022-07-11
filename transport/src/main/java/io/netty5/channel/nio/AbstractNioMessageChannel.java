@@ -16,7 +16,6 @@
 package io.netty5.channel.nio;
 
 import io.netty5.channel.Channel;
-import io.netty5.channel.ChannelConfig;
 import io.netty5.channel.ChannelOutboundBuffer;
 import io.netty5.channel.ChannelPipeline;
 import io.netty5.channel.ChannelShutdownDirection;
@@ -56,16 +55,15 @@ public abstract class AbstractNioMessageChannel<P extends Channel, L extends Soc
     }
 
     protected boolean continueReading(RecvBufferAllocator.Handle allocHandle) {
-        return allocHandle.continueReading();
+        return allocHandle.continueReading(isAutoRead());
     }
 
     @Override
     protected final void readNow() {
         assert executor().inEventLoop();
-        final ChannelConfig config = config();
         final ChannelPipeline pipeline = pipeline();
         final RecvBufferAllocator.Handle allocHandle = recvBufAllocHandle();
-        allocHandle.reset(config);
+        allocHandle.reset();
 
         boolean closed = false;
         Throwable exception = null;
@@ -117,7 +115,7 @@ public abstract class AbstractNioMessageChannel<P extends Channel, L extends Soc
             // * The user called Channel.read() or ChannelHandlerContext.read() in channelReadComplete(...) method
             //
             // See https://github.com/netty/netty/issues/2254
-            if (!readPending && !config.isAutoRead()) {
+            if (!readPending && !isAutoRead()) {
                 removeReadOp();
             }
         }
@@ -131,7 +129,7 @@ public abstract class AbstractNioMessageChannel<P extends Channel, L extends Soc
         }
         final int interestOps = key.interestOps();
 
-        int maxMessagesPerWrite = config().getMaxMessagesPerWrite();
+        int maxMessagesPerWrite = getMaxMessagesPerWrite();
         while (maxMessagesPerWrite > 0) {
             Object msg = in.current();
             if (msg == null) {
@@ -139,7 +137,7 @@ public abstract class AbstractNioMessageChannel<P extends Channel, L extends Soc
             }
             try {
                 boolean done = false;
-                for (int i = config().getWriteSpinCount() - 1; i >= 0; i--) {
+                for (int i = getWriteSpinCount() - 1; i >= 0; i--) {
                     if (doWriteMessage(msg, in)) {
                         done = true;
                         break;
