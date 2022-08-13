@@ -97,6 +97,10 @@ public final class InternalThreadLocalMap extends UnpaddedInternalThreadLocalMap
         return slowThreadLocalMap.get();
     }
 
+    /**
+     * 当前线程是否是FastThreadLocalThread类型，决定获取方式
+     * @return
+     */
     public static InternalThreadLocalMap get() {
         Thread thread = Thread.currentThread();
         if (thread instanceof FastThreadLocalThread) {

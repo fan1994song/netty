@@ -12,6 +12,8 @@
  * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
  * License for the specific language governing permissions and limitations
  * under the License.
+ * 适合短平快任务：所以基于内存后续统一持久化要好些
+ * 基于数据库的，任务过多，会有较大的延迟
  */
 package io.netty.util;
 
@@ -522,6 +524,7 @@ public class HashedWheelTimer implements Timer {
         }
 
         private void transferTimeoutsToBuckets() {
+            // 仅传输最大值。每个滴答声 100000 次超时，以防止线程在循环中添加新超时时使 workerThread 陈旧
             // transfer only max. 100000 timeouts per tick to prevent a thread to stale the workerThread when it just
             // adds new timeouts in a loop.
             for (int i = 0; i < 100000; i++) {
@@ -776,6 +779,7 @@ public class HashedWheelTimer implements Timer {
         }
 
         /**
+         * 执行到期任务
          * Expire all {@link HashedWheelTimeout}s for the given {@code deadline}.
          */
         public void expireTimeouts(long deadline) {

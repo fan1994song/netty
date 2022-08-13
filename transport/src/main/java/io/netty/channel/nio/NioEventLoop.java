@@ -329,7 +329,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
      */
     private static Queue<Runnable> newTaskQueue0(int maxPendingTasks) {
         // This event loop never calls takeTask()
-        // 创建的是供多个线程生产任务、三线程消费任务的队列
+        // 创建的是供多个线程生产任务、多个线程消费任务的队列
         return maxPendingTasks == Integer.MAX_VALUE ? PlatformDependent.<Runnable>newMpscQueue()
                 : PlatformDependent.<Runnable>newMpscQueue(maxPendingTasks);
     }

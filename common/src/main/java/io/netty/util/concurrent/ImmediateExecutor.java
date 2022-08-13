@@ -20,6 +20,7 @@ import io.netty.util.internal.ObjectUtil;
 import java.util.concurrent.Executor;
 
 /**
+ * 在调用者线程中执行任务
  * {@link Executor} which execute tasks in the callers thread.
  */
 public final class ImmediateExecutor implements Executor {

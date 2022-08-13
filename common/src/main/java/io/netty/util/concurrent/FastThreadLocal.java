@@ -188,10 +188,13 @@ public class FastThreadLocal<V> {
      * Set the value for the current thread.
      */
     public final void set(V value) {
+        // 不是，则获取道当前线程的 InternalThreadLocalMap。然后将该
+        // FastThreadLocal 对应的 index 下标的 value 替换成新的 value。老的 value 设置成缺省值
         if (value != InternalThreadLocalMap.UNSET) {
             InternalThreadLocalMap threadLocalMap = InternalThreadLocalMap.get();
             setKnownNotUnset(threadLocalMap, value);
         } else {
+            // 是否是缺省值，如果是，则调用 remove 方法
             remove();
         }
     }
@@ -201,8 +204,11 @@ public class FastThreadLocal<V> {
      */
     public final void set(InternalThreadLocalMap threadLocalMap, V value) {
         if (value != InternalThreadLocalMap.UNSET) {
+            // 不是，则获取道当前线程的 InternalThreadLocalMap。然后将该
+            // FastThreadLocal 对应的 index 下标的 value 替换成新的 value。老的 value 设置成缺省值
             setKnownNotUnset(threadLocalMap, value);
         } else {
+            // 是否是缺省值，如果是，则调用 remove 方法
             remove(threadLocalMap);
         }
     }
