@@ -270,6 +270,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf>, 
 
     /**
      * Returns the {@link ByteBufAllocator} which created this buffer.
+     * 分配器，用于创建 ByteBuf 对象
      */
     public abstract ByteBufAllocator alloc();
 
@@ -299,12 +300,13 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf>, 
 
     /**
      * Return the underlying buffer instance if this buffer is a wrapper of another buffer.
-     *
+     * 获得被包装( wrap )的 ByteBuf 对象
      * @return {@code null} if this buffer is not a wrapper
      */
     public abstract ByteBuf unwrap();
 
     /**
+     * 是否 NIO Direct Buffer
      * Returns {@code true} if and only if this buffer is backed by an
      * NIO direct buffer.
      */
@@ -404,12 +406,14 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf>, 
     public abstract ByteBuf setIndex(int readerIndex, int writerIndex);
 
     /**
+     * 剩余可读字节数
      * Returns the number of readable bytes which is equal to
      * {@code (this.writerIndex - this.readerIndex)}.
      */
     public abstract int readableBytes();
 
     /**
+     * 剩余可写字节数
      * Returns the number of writable bytes which is equal to
      * {@code (this.capacity - this.writerIndex)}.
      */
@@ -467,6 +471,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf>, 
     public abstract ByteBuf clear();
 
     /**
+     * 标记读取位置
      * Marks the current {@code readerIndex} in this buffer.  You can
      * reposition the current {@code readerIndex} to the marked
      * {@code readerIndex} by calling {@link #resetReaderIndex()}.
@@ -475,6 +480,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf>, 
     public abstract ByteBuf markReaderIndex();
 
     /**
+     * 重置读取位置
      * Repositions the current {@code readerIndex} to the marked
      * {@code readerIndex} in this buffer.
      *
@@ -485,6 +491,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf>, 
     public abstract ByteBuf resetReaderIndex();
 
     /**
+     * 标记写入位置
      * Marks the current {@code writerIndex} in this buffer.  You can
      * reposition the current {@code writerIndex} to the marked
      * {@code writerIndex} by calling {@link #resetWriterIndex()}.

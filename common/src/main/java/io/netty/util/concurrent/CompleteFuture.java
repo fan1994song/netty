@@ -45,6 +45,7 @@ public abstract class CompleteFuture<V> extends AbstractFuture<V> {
 
     @Override
     public Future<V> addListener(GenericFutureListener<? extends Future<? super V>> listener) {
+        // 由于这是一个已完成的Future，所以立即通知Listener执行
         DefaultPromise.notifyListener(executor(), this, ObjectUtil.checkNotNull(listener, "listener"));
         return this;
     }

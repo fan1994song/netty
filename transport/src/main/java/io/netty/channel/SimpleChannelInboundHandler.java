@@ -20,7 +20,7 @@ import io.netty.util.internal.TypeParameterMatcher;
 
 /**
  * {@link ChannelInboundHandlerAdapter} which allows to explicit only handle a specific type of messages.
- *
+ * 实现对指定类型的消息的自定义处理
  * For example here is an implementation which only handle {@link String} messages.
  *
  * <pre>
@@ -41,7 +41,13 @@ import io.netty.util.internal.TypeParameterMatcher;
  */
 public abstract class SimpleChannelInboundHandler<I> extends ChannelInboundHandlerAdapter {
 
+    /**
+     * 类型匹配器
+     */
     private final TypeParameterMatcher matcher;
+    /**
+     * 使用完消息，是否自动释放
+     */
     private final boolean autoRelease;
 
     /**
@@ -82,6 +88,7 @@ public abstract class SimpleChannelInboundHandler<I> extends ChannelInboundHandl
     }
 
     /**
+     * 底层就是msg是否是class的实例
      * Returns {@code true} if the given message should be handled. If {@code false} it will be passed to the next
      * {@link ChannelInboundHandler} in the {@link ChannelPipeline}.
      */
@@ -89,10 +96,17 @@ public abstract class SimpleChannelInboundHandler<I> extends ChannelInboundHandl
         return matcher.match(msg);
     }
 
+    /**
+     * 重写了channelRead
+     * @param ctx
+     * @param msg
+     * @throws Exception
+     */
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         boolean release = true;
         try {
+            // 子类只需要实现channelRead0即可，类型判断当前处理
             if (acceptInboundMessage(msg)) {
                 @SuppressWarnings("unchecked")
                 I imsg = (I) msg;
@@ -102,6 +116,7 @@ public abstract class SimpleChannelInboundHandler<I> extends ChannelInboundHandl
                 ctx.fireChannelRead(msg);
             }
         } finally {
+            // 判断，是否要释放消息
             if (autoRelease && release) {
                 ReferenceCountUtil.release(msg);
             }

@@ -47,7 +47,7 @@ import java.util.List;
  * Be aware that you need to call {@link ReferenceCounted#retain()} on messages that are just passed through if they
  * are of type {@link ReferenceCounted}. This is needed as the {@link MessageToMessageDecoder} will call
  * {@link ReferenceCounted#release()} on decoded messages.
- *
+ * 消息解码器
  */
 public abstract class MessageToMessageDecoder<I> extends ChannelInboundHandlerAdapter {
 
@@ -61,6 +61,7 @@ public abstract class MessageToMessageDecoder<I> extends ChannelInboundHandlerAd
     }
 
     /**
+     * 原理和编码器相同，创建匹配器
      * Create a new instance
      *
      * @param inboundMessageType    The type of messages to match and so decode
@@ -81,15 +82,19 @@ public abstract class MessageToMessageDecoder<I> extends ChannelInboundHandlerAd
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         CodecOutputList out = CodecOutputList.newInstance();
         try {
+            // 判断是否为匹配的消息
             if (acceptInboundMessage(msg)) {
+                // 转化消息类型
                 @SuppressWarnings("unchecked")
                 I cast = (I) msg;
                 try {
+                    // 将消息解码成另外一个消息，子类实现
                     decode(ctx, cast, out);
                 } finally {
                     ReferenceCountUtil.release(cast);
                 }
             } else {
+                // 不匹配，添加到 out
                 out.add(msg);
             }
         } catch (DecoderException e) {

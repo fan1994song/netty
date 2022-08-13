@@ -34,6 +34,7 @@ import static io.netty.buffer.ByteBufUtil.appendPrettyHexDump;
 import static io.netty.util.internal.StringUtil.NEWLINE;
 
 /**
+ * 日志处理器
  * A {@link ChannelHandler} that logs all events using a logging framework.
  * By default, all events are logged at <tt>DEBUG</tt> level and full hex dumps are recorded for ByteBufs.
  */
@@ -305,6 +306,7 @@ public class LoggingHandler extends ChannelDuplexHandler {
     }
 
     /**
+     * 格式化事件并返回格式化的消息
      * Formats an event and returns the formatted message.
      *
      * @param eventName the name of the event
@@ -319,6 +321,7 @@ public class LoggingHandler extends ChannelDuplexHandler {
     }
 
     /**
+     * 不同类型，使用不同的方式格式化
      * Formats an event and returns the formatted message.
      *
      * @param eventName the name of the event
@@ -335,6 +338,7 @@ public class LoggingHandler extends ChannelDuplexHandler {
     }
 
     /**
+     * 格式化
      * Formats an event and returns the formatted message.  This method is currently only used for formatting
      * {@link ChannelOutboundHandler#connect(ChannelHandlerContext, SocketAddress, SocketAddress, ChannelPromise)}.
      *
@@ -357,6 +361,7 @@ public class LoggingHandler extends ChannelDuplexHandler {
     }
 
     /**
+     * 生成参数为 ByteBuf 的指定事件的默认日志消息
      * Generates the default log message of the specified event whose argument is a {@link ByteBuf}.
      */
     private String formatByteBuf(ChannelHandlerContext ctx, String eventName, ByteBuf msg) {

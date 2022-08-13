@@ -33,6 +33,11 @@ public abstract class TypeParameterMatcher {
         }
     };
 
+    /**
+     * 通过反射构建匹配器，若 isInstance 则说明可以被正常处理
+     * @param parameterType
+     * @return
+     */
     public static TypeParameterMatcher get(final Class<?> parameterType) {
         final Map<Class<?>, TypeParameterMatcher> getCache =
                 InternalThreadLocalMap.get().typeParameterMatcherGetCache();

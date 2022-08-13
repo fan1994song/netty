@@ -95,6 +95,7 @@ import java.util.concurrent.TimeUnit;
  *
  * @see ReadTimeoutHandler
  * @see WriteTimeoutHandler
+ * 空闲监听的handler
  */
 public class IdleStateHandler extends ChannelDuplexHandler {
     private static final long MIN_TIMEOUT_NANOS = TimeUnit.MILLISECONDS.toNanos(1);
@@ -280,7 +281,9 @@ public class IdleStateHandler extends ChannelDuplexHandler {
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         if (readerIdleTimeNanos > 0 || allIdleTimeNanos > 0) {
+            // 标记正在读取
             reading = true;
+            // 重置 firstWriterIdleEvent 和 firstAllIdleEvent 为 true
             firstReaderIdleEvent = firstAllIdleEvent = true;
         }
         ctx.fireChannelRead(msg);
@@ -321,6 +324,7 @@ public class IdleStateHandler extends ChannelDuplexHandler {
 
         lastReadTime = lastWriteTime = ticksInNanos();
         if (readerIdleTimeNanos > 0) {
+            // 设置eventLoop的线程来执行定时任务，检测读写事件的心跳
             readerIdleTimeout = schedule(ctx, new ReaderIdleTimeoutTask(ctx),
                     readerIdleTimeNanos, TimeUnit.NANOSECONDS);
         }
@@ -393,13 +397,16 @@ public class IdleStateHandler extends ChannelDuplexHandler {
      * @see #hasOutputChanged(ChannelHandlerContext, boolean)
      */
     private void initOutputChanged(ChannelHandlerContext ctx) {
+        // 若需要观察
         if (observeOutput) {
             Channel channel = ctx.channel();
             Unsafe unsafe = channel.unsafe();
             ChannelOutboundBuffer buf = unsafe.outboundBuffer();
 
             if (buf != null) {
+                // 记录第一条准备 flash 到对端的消息的 HashCode
                 lastMessageHashCode = System.identityHashCode(buf.current());
+                // 记录总共等待 flush 到对端的内存大小、上次刷新进度
                 lastPendingWriteBytes = buf.totalPendingWriteBytes();
                 lastFlushProgress = buf.currentProgress();
             }
@@ -505,6 +512,7 @@ public class IdleStateHandler extends ChannelDuplexHandler {
                     ctx.fireExceptionCaught(t);
                 }
             } else {
+                // 若发生了相关读写事件，lastReadTime更新后，此处重新计算事件，丢到定时任务中
                 // Read occurred before the timeout - set a new timeout with shorter delay.
                 readerIdleTimeout = schedule(ctx, this, nextDelay, TimeUnit.NANOSECONDS);
             }

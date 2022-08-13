@@ -313,13 +313,16 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
 
     @Override
     protected boolean doConnect(SocketAddress remoteAddress, SocketAddress localAddress) throws Exception {
+        // 绑定本地地址
         if (localAddress != null) {
             doBind0(localAddress);
         }
 
         boolean success = false;
         try {
+            // 连接远程地址
             boolean connected = SocketUtils.connect(javaChannel(), remoteAddress);
+            // 首次连接,轮训连接事件进一步处理
             if (!connected) {
                 selectionKey().interestOps(SelectionKey.OP_CONNECT);
             }
@@ -346,14 +349,25 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
 
     @Override
     protected void doClose() throws Exception {
+        // 执行父类关闭方法
         super.doClose();
+        // 执行 Java 原生 NIO SocketChannel 关闭
         javaChannel().close();
     }
 
+    /**
+     * 读取写入的数据到方法参数 byteBuf 中
+     * @param byteBuf
+     * @return
+     * @throws Exception
+     */
     @Override
     protected int doReadBytes(ByteBuf byteBuf) throws Exception {
+        // 获得 RecvByteBufAllocator.Handle 对象
         final RecvByteBufAllocator.Handle allocHandle = unsafe().recvBufAllocHandle();
+        // 设置最大可读取字节数量。因为 ByteBuf 目前最大写入的大小为 byteBuf.writableBytes()
         allocHandle.attemptedBytesRead(byteBuf.writableBytes());
+        // 读取数据到 ByteBuf 中
         return byteBuf.writeBytes(javaChannel(), allocHandle.attemptedBytesRead());
     }
 
@@ -382,43 +396,62 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
         }
     }
 
+    /**
+     * 写出
+     * @param in
+     * @throws Exception
+     */
     @Override
     protected void doWrite(ChannelOutboundBuffer in) throws Exception {
         SocketChannel ch = javaChannel();
+        // 获得自旋写入次数
         int writeSpinCount = config().getWriteSpinCount();
         do {
+            // 写出内存队列为空，直接return
             if (in.isEmpty()) {
                 // All written so clear OP_WRITE
+                // 在完成内部队列的数据向对端写入时候，需要调用 #clearOpWrite()方法
                 clearOpWrite();
                 // Directly return here so incompleteWrite(...) is not called.
                 return;
             }
 
+            // 获得每次写入的最大字节数
             // Ensure the pending writes are made of ByteBufs only.
             int maxBytesPerGatheringWrite = ((NioSocketChannelConfig) config).getMaxBytesPerGatheringWrite();
+            // 从内存队列中，获得要写入的 ByteBuffer 数组
             ByteBuffer[] nioBuffers = in.nioBuffers(1024, maxBytesPerGatheringWrite);
+            // 写入的 ByteBuffer 数组的个数
             int nioBufferCnt = in.nioBufferCount();
 
+            // 写入 ByteBuffer 数组，到对端
             // Always use nioBuffers() to workaround data-corruption.
             // See https://github.com/netty/netty/issues/2761
             switch (nioBufferCnt) {
                 case 0:
+                    // 除了 ByteBuffers 之外，我们还有其他东西可以写，因此可以退回到正常的写操作
                     // We have something else beside ByteBuffers to write so fallback to normal writes.
                     writeSpinCount -= doWrite0(in);
                     break;
                 case 1: {
+                    // 只有一个 ByteBuf 所以使用 non-gathering write 零长度的缓冲区不会被 ChannelOutboundBuffer 添加到 nioBuffers 中，所以不需要检查所有缓冲区的总大小是否非零
                     // Only one ByteBuf so use non-gathering write
                     // Zero length buffers are not added to nioBuffers by ChannelOutboundBuffer, so there is no need
                     // to check if the total size of all the buffers is non-zero.
                     ByteBuffer buffer = nioBuffers[0];
                     int attemptedBytes = buffer.remaining();
+                    // 执行 NIO write 调用，写入单个 ByteBuffer 对象到对端
                     final int localWrittenBytes = ch.write(buffer);
+                    // 写入字节小于等于 0 ，说明 NIO Channel 不可写，所以注册 SelectionKey.OP_WRITE ，等待 NIO Channel 可写，并返回以结束循环
                     if (localWrittenBytes <= 0) {
                         incompleteWrite(true);
                         return;
                     }
+                    // 调整每次写入的最大字节数
                     adjustMaxBytesPerGatheringWrite(attemptedBytes, localWrittenBytes, maxBytesPerGatheringWrite);
+                    // 从内存队列中，移除已经写入的数据
                     in.removeBytes(localWrittenBytes);
+                    // 写入次数--
                     --writeSpinCount;
                     break;
                 }
@@ -427,21 +460,27 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
                     // to check if the total size of all the buffers is non-zero.
                     // We limit the max amount to int above so cast is safe
                     long attemptedBytes = in.nioBufferSize();
+                    // 执行 NIO write 调用，写入多个 ByteBuffer 到对端
                     final long localWrittenBytes = ch.write(nioBuffers, 0, nioBufferCnt);
+                    // 写入字节小于等于 0 ，说明 NIO Channel 不可写，所以注册 SelectionKey.OP_WRITE ，等待 NIO Channel 可写，并返回以结束循环
                     if (localWrittenBytes <= 0) {
                         incompleteWrite(true);
                         return;
                     }
+                    // 调整每次写入的最大字节数
                     // Casting to int is safe because we limit the total amount of data in the nioBuffers to int above.
                     adjustMaxBytesPerGatheringWrite((int) attemptedBytes, (int) localWrittenBytes,
                             maxBytesPerGatheringWrite);
+                    // 从内存队列中，移除已经写入的数据
                     in.removeBytes(localWrittenBytes);
+                    // 写入次数--
                     --writeSpinCount;
                     break;
                 }
             }
         } while (writeSpinCount > 0);
 
+        // 内存队列中的数据未完全写入，说明 NIO Channel 不可写，所以注册 SelectionKey.OP_WRITE ，等待 NIO Channel 可写
         incompleteWrite(writeSpinCount < 0);
     }
 
@@ -455,6 +494,7 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
         protected Executor prepareToClose() {
             try {
                 if (javaChannel().isOpen() && config().getSoLinger() > 0) {
+                    // 我们需要取消通道的这个键，因为我们会尝试读取或写入，导致 CPU 空轮询，直到实际关闭发生，这可能是稍后由于 SO_LINGER 处理。
                     // We need to cancel this key of the channel so we may not end up in a eventloop spin
                     // because we try to read or write until the actual close happens which may be later due
                     // SO_LINGER handling.

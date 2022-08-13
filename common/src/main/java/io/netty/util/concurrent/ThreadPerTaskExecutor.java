@@ -20,13 +20,23 @@ import io.netty.util.internal.ObjectUtil;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ThreadFactory;
 
+/**
+ * 启动线程的方式运行任务，很拉
+ */
 public final class ThreadPerTaskExecutor implements Executor {
+    /**
+     * 线程工厂对象
+     */
     private final ThreadFactory threadFactory;
 
     public ThreadPerTaskExecutor(ThreadFactory threadFactory) {
         this.threadFactory = ObjectUtil.checkNotNull(threadFactory, "threadFactory");
     }
 
+    /**
+     * 创建线程来执行任务
+     * @param command
+     */
     @Override
     public void execute(Runnable command) {
         threadFactory.newThread(command).start();

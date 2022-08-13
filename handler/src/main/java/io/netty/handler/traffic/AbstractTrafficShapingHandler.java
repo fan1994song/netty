@@ -34,6 +34,7 @@ import io.netty.util.internal.logging.InternalLoggerFactory;
 import java.util.concurrent.TimeUnit;
 
 /**
+ * 网络带宽监控
  * <p>AbstractTrafficShapingHandler allows to limit the global bandwidth
  * (see {@link GlobalTrafficShapingHandler}) or per session
  * bandwidth (see {@link ChannelTrafficShapingHandler}), as traffic shaping.

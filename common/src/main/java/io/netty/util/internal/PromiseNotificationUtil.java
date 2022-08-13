@@ -58,6 +58,7 @@ public final class PromiseNotificationUtil {
     }
 
     /**
+     * 设置失败原因，进行异常日志输出
      * Try to mark the {@link Promise} as failure and log if {@code logger} is not {@code null} in case this fails.
      */
     public static void tryFailure(Promise<?> p, Throwable cause, InternalLogger logger) {

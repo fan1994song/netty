@@ -27,17 +27,22 @@ import java.util.concurrent.TimeoutException;
  */
 public abstract class AbstractFuture<V> implements Future<V> {
 
+    // 模版get方法,定义了主要走向
     @Override
     public V get() throws InterruptedException, ExecutionException {
+        // 阻塞直到异步操作完成
         await();
 
         Throwable cause = cause();
         if (cause == null) {
+            // 成功则返回关联结果
             return getNow();
         }
         if (cause instanceof CancellationException) {
+            // 由用户取消
             throw (CancellationException) cause;
         }
+        // 失败抛出异常
         throw new ExecutionException(cause);
     }
 

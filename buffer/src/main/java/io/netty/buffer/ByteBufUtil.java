@@ -78,6 +78,7 @@ public final class ByteBufUtil {
                 "io.netty.allocator.type", PlatformDependent.isAndroid() ? "unpooled" : "pooled");
         allocType = allocType.toLowerCase(Locale.US).trim();
 
+        // 默认情况使用池化分配器
         ByteBufAllocator alloc;
         if ("unpooled".equals(allocType)) {
             alloc = UnpooledByteBufAllocator.DEFAULT;
@@ -1400,6 +1401,7 @@ public final class ByteBufUtil {
     }
 
     /**
+     * 追加输出便于观察的数据到显示台上
      * Appends the prettified multi-line hexadecimal dump of the specified {@link ByteBuf} to the specified
      * {@link StringBuilder} that is easy to read by humans.
      */

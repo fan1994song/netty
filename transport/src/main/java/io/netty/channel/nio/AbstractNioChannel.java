@@ -40,6 +40,7 @@ import java.nio.channels.ClosedChannelException;
 import java.nio.channels.ConnectionPendingException;
 import java.nio.channels.SelectableChannel;
 import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -50,6 +51,9 @@ public abstract class AbstractNioChannel extends AbstractChannel {
     private static final InternalLogger logger =
             InternalLoggerFactory.getInstance(AbstractNioChannel.class);
 
+    /**
+     * Netty NIO Channel 对象，持有的 Java 原生 NIO 的 Channel 对象
+     */
     private final SelectableChannel ch;
     protected final int readInterestOp;
     volatile SelectionKey selectionKey;
@@ -81,6 +85,7 @@ public abstract class AbstractNioChannel extends AbstractChannel {
         this.ch = ch;
         this.readInterestOp = readInterestOp;
         try {
+            // 设置nioChannel为非阻塞
             ch.configureBlocking(false);
         } catch (IOException e) {
             try {
@@ -239,18 +244,21 @@ public abstract class AbstractNioChannel extends AbstractChannel {
             }
 
             try {
+                // 目前有正在连接远程地址的 ChannelPromise ，则直接抛出异常，禁止同时发起多个连接
                 if (connectPromise != null) {
                     // Already a connect in process.
                     throw new ConnectionPendingException();
                 }
 
                 boolean wasActive = isActive();
+                // 执行连接远程地址
                 if (doConnect(remoteAddress, localAddress)) {
                     fulfillConnectPromise(promise, wasActive);
                 } else {
                     connectPromise = promise;
                     requestedRemoteAddress = remoteAddress;
 
+                    // 使用 EventLoop 发起定时任务，监听连接远程地址超时。若连接超时，则回调通知 connectPromise 超时异常
                     // Schedule connect timeout.
                     int connectTimeoutMillis = config().getConnectTimeoutMillis();
                     if (connectTimeoutMillis > 0) {
@@ -267,13 +275,16 @@ public abstract class AbstractNioChannel extends AbstractChannel {
                         }, connectTimeoutMillis, TimeUnit.MILLISECONDS);
                     }
 
+                    // 异步回调得到结果了，
                     promise.addListener(new ChannelFutureListener() {
                         @Override
                         public void operationComplete(ChannelFuture future) throws Exception {
                             if (future.isCancelled()) {
+                                // 取消定时任务
                                 if (connectTimeoutFuture != null) {
                                     connectTimeoutFuture.cancel(false);
                                 }
+                                // 置空 connectPromise
                                 connectPromise = null;
                                 close(voidPromise());
                             }
@@ -350,6 +361,7 @@ public abstract class AbstractNioChannel extends AbstractChannel {
             // Flush immediately only when there's no pending flush.
             // If there's a pending flush operation, event loop will call forceFlush() later,
             // and thus there's no need to call it now.
+            // 只有在没有挂起的刷新时才立即刷新。如果有一个挂起的刷新操作，事件循环稍后会调用 forceFlush() ，因此现在不需要调用它
             if (!isFlushPending()) {
                 super.flush0();
             }
@@ -361,6 +373,11 @@ public abstract class AbstractNioChannel extends AbstractChannel {
             super.flush0();
         }
 
+        /**
+         * 当写入失败的时候，再去注册 SelectionKey.OP_WRITE 事件。这意味着什么呢？在 #flush() 方法中，如果写入数据到
+         * Channel 失败，会通过注册 SelectionKey.OP_WRITE 事件，然后在轮询到 Channel 可写 时，再“回调” #forceFlush() 方法”
+         * @return
+         */
         private boolean isFlushPending() {
             SelectionKey selectionKey = selectionKey();
             return selectionKey.isValid() && (selectionKey.interestOps() & SelectionKey.OP_WRITE) != 0;
@@ -372,11 +389,13 @@ public abstract class AbstractNioChannel extends AbstractChannel {
         return loop instanceof NioEventLoop;
     }
 
+    // 注册逻辑
     @Override
     protected void doRegister() throws Exception {
         boolean selected = false;
         for (;;) {
             try {
+                // Selector 和 和channel关联，一个Selector可以关联多个channel，多线程事件驱动
                 selectionKey = javaChannel().register(eventLoop().unwrappedSelector(), 0, this);
                 return;
             } catch (CancelledKeyException e) {
@@ -496,6 +515,7 @@ public abstract class AbstractNioChannel extends AbstractChannel {
 
     @Override
     protected void doClose() throws Exception {
+        // 通知 connectPromise 异常失败
         ChannelPromise promise = connectPromise;
         if (promise != null) {
             // Use tryFailure() instead of setFailure() to avoid the race against cancel().
@@ -503,6 +523,7 @@ public abstract class AbstractNioChannel extends AbstractChannel {
             connectPromise = null;
         }
 
+        // 取消 connectTimeoutFuture 等待
         Future<?> future = connectTimeoutFuture;
         if (future != null) {
             future.cancel(false);

@@ -58,47 +58,76 @@ import static io.netty.channel.ChannelHandlerMask.MASK_USER_EVENT_TRIGGERED;
 import static io.netty.channel.ChannelHandlerMask.MASK_WRITE;
 import static io.netty.channel.ChannelHandlerMask.mask;
 
+/**
+ * 抽奖的channel处理器的上下文
+ */
 abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, ResourceLeakHint {
 
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(AbstractChannelHandlerContext.class);
+    // 头
     volatile AbstractChannelHandlerContext next;
+    // 尾
     volatile AbstractChannelHandlerContext prev;
 
+    /**
+     * handler状态更新原子类
+     */
     private static final AtomicIntegerFieldUpdater<AbstractChannelHandlerContext> HANDLER_STATE_UPDATER =
             AtomicIntegerFieldUpdater.newUpdater(AbstractChannelHandlerContext.class, "handlerState");
 
     /**
+     * 添加准备中
      * {@link ChannelHandler#handlerAdded(ChannelHandlerContext)} is about to be called.
      */
     private static final int ADD_PENDING = 1;
     /**
+     * 添加完成
      * {@link ChannelHandler#handlerAdded(ChannelHandlerContext)} was called.
      */
     private static final int ADD_COMPLETE = 2;
     /**
+     * 移除完成
      * {@link ChannelHandler#handlerRemoved(ChannelHandlerContext)} was called.
      */
     private static final int REMOVE_COMPLETE = 3;
     /**
+     * 初始化
      * Neither {@link ChannelHandler#handlerAdded(ChannelHandlerContext)}
      * nor {@link ChannelHandler#handlerRemoved(ChannelHandlerContext)} was called.
      */
     private static final int INIT = 0;
 
+    /**
+     * 所属 pipeline
+     */
     private final DefaultChannelPipeline pipeline;
+    /**
+     * 名称
+     */
     private final String name;
+    /**
+     * 是否使用有序的 EventExecutor ( {@link #executor} )，即 OrderedEventExecutor
+     */
     private final boolean ordered;
     private final int executionMask;
 
     // Will be set to null if no child executor should be used, otherwise it will be set to the
     // child executor.
+    // 如果不应该使用子执行器，将设置为 null，否则将设置为子执行器
     final EventExecutor executor;
+    /**
+     * 成功的 Promise 对象
+     */
     private ChannelFuture succeededFuture;
 
     // Lazily instantiated tasks used to trigger events to a handler with different executor.
     // There is no need to make this volatile as at worse it will just create a few more instances then needed.
+    // 延迟实例化的任务用于触发事件到具有不同执行器的处理程序
     private Tasks invokeTasks;
 
+    /**
+     * 处理器状态
+     */
     private volatile int handlerState = INIT;
 
     AbstractChannelHandlerContext(DefaultChannelPipeline pipeline, EventExecutor executor,
@@ -480,11 +509,13 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
     @Override
     public ChannelFuture bind(final SocketAddress localAddress, final ChannelPromise promise) {
         ObjectUtil.checkNotNull(localAddress, "localAddress");
+        // 是否是有效的promise
         if (isNotValidPromise(promise, false)) {
             // cancelled
             return promise;
         }
 
+        // 获取输出事件channelOutBound()
         final AbstractChannelHandlerContext next = findContextOutbound(MASK_BIND);
         EventExecutor executor = next.executor();
         if (executor.inEventLoop()) {
@@ -505,6 +536,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
             try {
                 ((ChannelOutboundHandler) handler()).bind(this, localAddress, promise);
             } catch (Throwable t) {
+                // 写出事件异常处理
                 notifyOutboundHandlerException(t, promise);
             }
         } else {
@@ -554,6 +586,11 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         }
     }
 
+    /**
+     * 断开连接，底层还是调用的close()方法
+     * @param promise
+     * @return
+     */
     @Override
     public ChannelFuture disconnect(final ChannelPromise promise) {
         if (!channel().metadata().hasDisconnect()) {
@@ -595,11 +632,13 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
 
     @Override
     public ChannelFuture close(final ChannelPromise promise) {
+        // 校验有效性
         if (isNotValidPromise(promise, false)) {
             // cancelled
             return promise;
         }
 
+        // 监听close()事件的channelhandler
         final AbstractChannelHandlerContext next = findContextOutbound(MASK_CLOSE);
         EventExecutor executor = next.executor();
         if (executor.inEventLoop()) {
@@ -722,6 +761,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
 
     @Override
     public ChannelHandlerContext flush() {
+        // 找到重写了flush方法的写出handler，从tail依次执行
         final AbstractChannelHandlerContext next = findContextOutbound(MASK_FLUSH);
         EventExecutor executor = next.executor();
         if (executor.inEventLoop()) {
@@ -769,8 +809,10 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
     }
 
     private void write(Object msg, boolean flush, ChannelPromise promise) {
+        // 基础校验
         ObjectUtil.checkNotNull(msg, "msg");
         try {
+            // 不合法promise直接过滤掉
             if (isNotValidPromise(promise, true)) {
                 ReferenceCountUtil.release(msg);
                 // cancelled
@@ -781,11 +823,13 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
             throw e;
         }
 
+        // 根据mark标记去查询相关的channelHandler
         final AbstractChannelHandlerContext next = findContextOutbound(flush ?
                 (MASK_WRITE | MASK_FLUSH) : MASK_WRITE);
         final Object m = pipeline.touch(msg, next);
         EventExecutor executor = next.executor();
         if (executor.inEventLoop()) {
+            // 是否执行刷新发送
             if (flush) {
                 next.invokeWriteAndFlush(m, promise);
             } else {
@@ -814,6 +858,10 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         PromiseNotificationUtil.tryFailure(promise, cause, promise instanceof VoidChannelPromise ? null : logger);
     }
 
+    /**
+     * 返回channel和当前线程关联的promise对象
+     * @return
+     */
     @Override
     public ChannelPromise newPromise() {
         return new DefaultChannelPromise(channel(), executor());
@@ -861,6 +909,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
             return false;
         }
 
+        // 返回void的promise不用理会返回值
         if (!allowVoidPromise && promise instanceof VoidChannelPromise) {
             throw new IllegalArgumentException(
                     StringUtil.simpleClassName(VoidChannelPromise.class) + " not allowed for this operation");
@@ -883,6 +932,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
     }
 
     private AbstractChannelHandlerContext findContextOutbound(int mask) {
+        // 循环，向前获得一个 Outbound 节点
         AbstractChannelHandlerContext ctx = this;
         EventExecutor currentExecutor = executor();
         do {
@@ -907,10 +957,17 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         return channel().voidPromise();
     }
 
+    /**
+     * 设置为移除完成
+     */
     final void setRemoved() {
         handlerState = REMOVE_COMPLETE;
     }
 
+    /**
+     * 设置添加完成，状态变更
+     * @return
+     */
     final boolean setAddComplete() {
         for (;;) {
             int oldState = handlerState;
@@ -926,6 +983,9 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         }
     }
 
+    /**
+     * 设置为添加进行中
+     */
     final void setAddPending() {
         boolean updated = HANDLER_STATE_UPDATER.compareAndSet(this, INIT, ADD_PENDING);
         assert updated; // This should always be true as it MUST be called before setAddComplete() or setRemoved().
@@ -1011,7 +1071,11 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         return StringUtil.simpleClassName(ChannelHandlerContext.class) + '(' + name + ", " + channel() + ')';
     }
 
+    /**
+     * 写出任务类实现
+     */
     static final class WriteTask implements Runnable {
+        // 恶汉式初始化
         private static final ObjectPool<WriteTask> RECYCLER = ObjectPool.newPool(new ObjectCreator<WriteTask>() {
             @Override
             public WriteTask newObject(Handle<WriteTask> handle) {
@@ -1049,8 +1113,9 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
             task.ctx = ctx;
             task.msg = msg;
             task.promise = promise;
-
+            // 计算 AbstractWriteTask 对象大小
             if (ESTIMATE_TASK_SIZE_ON_SUBMIT) {
+                // 增加 ChannelOutboundBuffer 的 totalPendingSize 属性
                 task.size = ctx.pipeline.estimatorHandle().size(msg) + WRITE_TASK_OVERHEAD;
                 ctx.pipeline.incrementPendingOutboundBytes(task.size);
             } else {
@@ -1065,12 +1130,14 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         public void run() {
             try {
                 decrementPendingOutboundBytes();
+                // 执行 write 事件到下一个节点
                 if (size >= 0) {
                     ctx.invokeWrite(msg, promise);
                 } else {
                     ctx.invokeWriteAndFlush(msg, promise);
                 }
             } finally {
+                // 置空 AbstractWriteTask 对象，并调用 Recycler.Handle#recycle(this) 方法，回收该对象
                 recycle();
             }
         }
@@ -1085,6 +1152,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
 
         private void decrementPendingOutboundBytes() {
             if (ESTIMATE_TASK_SIZE_ON_SUBMIT) {
+                // 减少 ChannelOutboundBuffer 的 totalPendingSize 属性
                 ctx.pipeline.decrementPendingOutboundBytes(size & Integer.MAX_VALUE);
             }
         }

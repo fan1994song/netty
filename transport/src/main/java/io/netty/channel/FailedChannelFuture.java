@@ -23,6 +23,7 @@ import io.netty.util.internal.PlatformDependent;
  * The {@link CompleteChannelFuture} which is failed already.  It is
  * recommended to use {@link Channel#newFailedFuture(Throwable)}
  * instead of calling the constructor of this future.
+ * 失败future
  */
 final class FailedChannelFuture extends CompleteChannelFuture {
 

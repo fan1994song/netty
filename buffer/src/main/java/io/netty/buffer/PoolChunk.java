@@ -25,7 +25,7 @@ import java.util.PriorityQueue;
 
 /**
  * Description of algorithm for PageRun/PoolSubpage allocation from PoolChunk
- *
+ * Netty 对 Jemalloc Chunk 的实现类
  * Notation: The following terms are important to understand the code
  * > page  - a page is the smallest unit of memory chunk that can be allocated
  * > run   - a run is a collection of pages
@@ -143,13 +143,24 @@ final class PoolChunk<T> implements PoolChunkMetric {
     static final int SIZE_SHIFT = INUSED_BIT_LENGTH + IS_USED_SHIFT;
     static final int RUN_OFFSET_SHIFT = SIZE_BIT_LENGTH + SIZE_SHIFT;
 
+    /**
+     * 所属 Arena 对象
+     */
     final PoolArena<T> arena;
+
     final Object base;
+    /**
+     * 内存空间
+     */
     final T memory;
+    /**
+     * 是否非池化
+     */
     final boolean unpooled;
 
     /**
      * store the first page and last page of each avail run
+     * 存储每个内存信息runsAvailMap
      */
     private final LongLongHashMap runsAvailMap;
 
@@ -168,8 +179,17 @@ final class PoolChunk<T> implements PoolChunkMetric {
      */
     private final LongCounter pinnedBytes = PlatformDependent.newLongCounter();
 
+    /**
+     * Page 大小，默认 8KB = 8192B
+     */
     private final int pageSize;
+    /**
+     * 从 1 开始左移到 {@link #pageSize} 的位数。默认 13 ，1 << 13 = 8192
+     */
     private final int pageShifts;
+    /**
+     * Chunk 内存块占用大小。默认为 16M = 16 * 1024
+     */
     private final int chunkSize;
 
     // Use as cache for ByteBuffer created from the memory. These are just duplicates and so are only a container
@@ -199,6 +219,7 @@ final class PoolChunk<T> implements PoolChunkMetric {
         this.chunkSize = chunkSize;
         freeBytes = chunkSize;
 
+        // 新的运行可用队列数组
         runsAvail = newRunsAvailqueueArray(maxPageIdx);
         runsAvailMap = new LongLongHashMap(-1);
         subpages = new PoolSubpage[chunkSize >> pageShifts];
@@ -304,6 +325,7 @@ final class PoolChunk<T> implements PoolChunkMetric {
         final long handle;
         if (sizeIdx <= arena.smallMaxSizeIdx) {
             // small
+            // 大于等于 Page 大小，分配 Page 内存块
             handle = allocateSubpage(sizeIdx);
             if (handle < 0) {
                 return false;
@@ -312,6 +334,7 @@ final class PoolChunk<T> implements PoolChunkMetric {
         } else {
             // normal
             // runSize must be multiple of pageSize
+            // 大于等于 Page 大小，分配 Page 内存块
             int runSize = arena.sizeIdx2size(sizeIdx);
             handle = allocateRun(runSize);
             if (handle < 0) {
@@ -325,7 +348,13 @@ final class PoolChunk<T> implements PoolChunkMetric {
         return true;
     }
 
+    /**
+     * 分配内存块
+     * @param runSize
+     * @return
+     */
     private long allocateRun(int runSize) {
+        // 获得层级
         int pages = runSize >> pageShifts;
         int pageIdx = arena.pages2pageIdx(pages);
 
@@ -420,7 +449,7 @@ final class PoolChunk<T> implements PoolChunkMetric {
     /**
      * Create / initialize a new PoolSubpage of normCapacity. Any PoolSubpage created / initialized here is added to
      * subpage pool in the PoolArena that owns this PoolChunk
-     *
+     * 分配 Subpage 内存块
      * @param sizeIdx sizeIdx of normalized size
      *
      * @return index in memoryMap
@@ -428,7 +457,9 @@ final class PoolChunk<T> implements PoolChunkMetric {
     private long allocateSubpage(int sizeIdx) {
         // Obtain the head of the PoolSubPage pool that is owned by the PoolArena and synchronize on it.
         // This is need as we may add it back and so alter the linked-list structure.
+        // 获得对应内存规格的 Subpage 双向链表的 head 节点
         PoolSubpage<T> head = arena.findSubpagePoolHead(sizeIdx);
+        // 加锁，分配过程会修改双向链表的结构，会存在多线程的情况
         synchronized (head) {
             //allocate a new run
             int runSize = calculateRunSize(sizeIdx);
@@ -441,7 +472,7 @@ final class PoolChunk<T> implements PoolChunkMetric {
             int runOffset = runOffset(runHandle);
             assert subpages[runOffset] == null;
             int elemSize = arena.sizeIdx2size(sizeIdx);
-
+            // 获得节点对应的 subpages 数组的 PoolSubpage 对象
             PoolSubpage<T> subpage = new PoolSubpage<T>(head, this, pageShifts, runOffset,
                                runSize(pageShifts, runHandle), elemSize);
 
@@ -451,6 +482,7 @@ final class PoolChunk<T> implements PoolChunkMetric {
     }
 
     /**
+     * 释放指定位置的内存块。根据情况，内存块可能是 SubPage ，也可能是 Page ，也可能是释放 SubPage 并且释放对应的 Page
      * Free a subpage or a run of pages When a subpage is freed from PoolSubpage, it might be added back to subpage pool
      * of the owning PoolArena. If the subpage pool in PoolArena has at least one other PoolSubpage of given elemSize,
      * we can completely free the owning Page so it is available for subsequent allocations
@@ -458,6 +490,7 @@ final class PoolChunk<T> implements PoolChunkMetric {
      * @param handle handle to free
      */
     void free(long handle, int normCapacity, ByteBuffer nioBuffer) {
+        // 获得数组的编号( 下标 )
         int runSize = runSize(pageShifts, handle);
         if (isSubpage(handle)) {
             int sizeIdx = arena.size2SizeIdx(normCapacity);
@@ -470,6 +503,7 @@ final class PoolChunk<T> implements PoolChunkMetric {
             // Obtain the head of the PoolSubPage pool that is owned by the PoolArena and synchronize on it.
             // This is need as we may add it back and so alter the linked-list structure.
             synchronized (head) {
+                // 释放 Subpage
                 if (subpage.free(head, bitmapIdx(handle))) {
                     //the subpage is still used, do not free it
                     return;

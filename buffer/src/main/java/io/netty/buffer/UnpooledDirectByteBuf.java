@@ -569,6 +569,7 @@ public class UnpooledDirectByteBuf extends AbstractReferenceCountedByteBuf {
         try {
             return in.read(tmpBuf);
         } catch (ClosedChannelException ignored) {
+            // 读取时出现关闭异常时，返回-1，这也是上层判断<0就执行close操作的原因
             return -1;
         }
     }

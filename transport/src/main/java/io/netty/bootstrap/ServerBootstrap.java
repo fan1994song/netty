@@ -48,10 +48,28 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
 
     // The order in which child ChannelOptions are applied is important they may depend on each other for validation
     // purposes.
+    /**
+     * 子channel的可选项集合
+     * */
     private final Map<ChannelOption<?>, Object> childOptions = new LinkedHashMap<ChannelOption<?>, Object>();
+    /**
+     * 子channel的属性集合
+     * */
     private final Map<AttributeKey<?>, Object> childAttrs = new ConcurrentHashMap<AttributeKey<?>, Object>();
+
+    /**
+     * 启动类配置对象
+     */
     private final ServerBootstrapConfig config = new ServerBootstrapConfig(this);
+
+    /**
+     * 子channel的EventLoopGroup对象，workerEventLoopGroup
+     */
     private volatile EventLoopGroup childGroup;
+
+    /**
+     * 子channel的处理器
+     * */
     private volatile ChannelHandler childHandler;
 
     public ServerBootstrap() { }
@@ -129,16 +147,20 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
 
     @Override
     void init(Channel channel) {
+        // 初始化channel的options配置
         setChannelOptions(channel, newOptionsArray(), logger);
+        // 设置attr
         setAttributes(channel, newAttributesArray());
 
         ChannelPipeline p = channel.pipeline();
 
+        // 记录server属性
         final EventLoopGroup currentChildGroup = childGroup;
         final ChannelHandler currentChildHandler = childHandler;
         final Entry<ChannelOption<?>, Object>[] currentChildOptions = newOptionsArray(childOptions);
         final Entry<AttributeKey<?>, Object>[] currentChildAttrs = newAttributesArray(childAttrs);
 
+        // 添加 ChannelInitializer 对象到 NioServerSocketChannel的pipeline 中，用于channel注册到workEventLoop
         p.addLast(new ChannelInitializer<Channel>() {
             @Override
             public void initChannel(final Channel ch) {
@@ -172,12 +194,18 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
         return this;
     }
 
+    /**
+     * server端的接收器
+     */
     private static class ServerBootstrapAcceptor extends ChannelInboundHandlerAdapter {
 
         private final EventLoopGroup childGroup;
         private final ChannelHandler childHandler;
         private final Entry<ChannelOption<?>, Object>[] childOptions;
         private final Entry<AttributeKey<?>, Object>[] childAttrs;
+        /**
+         * 自动恢复接受客户端连接的任务
+         */
         private final Runnable enableAutoReadTask;
 
         ServerBootstrapAcceptor(
@@ -212,6 +240,7 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
             setAttributes(child, childAttrs);
 
             try {
+                // channel注册到workEventLoop上面
                 childGroup.register(child).addListener(new ChannelFutureListener() {
                     @Override
                     public void operationComplete(ChannelFuture future) throws Exception {
@@ -221,6 +250,7 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
                     }
                 });
             } catch (Throwable t) {
+                // 如果注册失败，强制关闭连接
                 forceClose(child, t);
             }
         }
@@ -234,13 +264,16 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
             final ChannelConfig config = ctx.channel().config();
             if (config.isAutoRead()) {
+                // 关闭接受新的客户端连接
                 // stop accept new connections for 1 second to allow the channel to recover
                 // See https://github.com/netty/netty/issues/1328
                 config.setAutoRead(false);
+                // 发起 1 秒的延迟任务，恢复重启开启接受新的客户端连接
                 ctx.channel().eventLoop().schedule(enableAutoReadTask, 1, TimeUnit.SECONDS);
             }
             // still let the exceptionCaught event flow through the pipeline to give the user
             // a chance to do something with it
+            // // 继续传播 exceptionCaught 给下一个节点
             ctx.fireExceptionCaught(cause);
         }
     }

@@ -49,6 +49,7 @@ import java.util.List;
  * Be aware that you need to call {@link ReferenceCounted#retain()} on messages that are just passed through if they
  * are of type {@link ReferenceCounted}. This is needed as the {@link MessageToMessageEncoder} will call
  * {@link ReferenceCounted#release()} on encoded messages.
+ * 编码操作，输出数据时使用
  */
 public abstract class MessageToMessageEncoder<I> extends ChannelOutboundHandlerAdapter {
 
@@ -62,6 +63,7 @@ public abstract class MessageToMessageEncoder<I> extends ChannelOutboundHandlerA
     }
 
     /**
+     * 根据class类型创建相应的匹配器
      * Create a new instance
      *
      * @param outboundMessageType   The type of messages to match and so encode
@@ -78,6 +80,13 @@ public abstract class MessageToMessageEncoder<I> extends ChannelOutboundHandlerA
         return matcher.match(msg);
     }
 
+    /**
+     * 写事件传递时acceptOutboundMessage匹配一下，符合处理下，不符合直接传递给下一个
+     * @param ctx
+     * @param msg
+     * @param promise
+     * @throws Exception
+     */
     @Override
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
         CodecOutputList out = null;
@@ -106,12 +115,16 @@ public abstract class MessageToMessageEncoder<I> extends ChannelOutboundHandlerA
         } catch (Throwable t) {
             throw new EncoderException(t);
         } finally {
+            // out不为空，正常encode了，
             if (out != null) {
                 try {
+                    // 单个消息一次传递
                     final int sizeMinusOne = out.size() - 1;
                     if (sizeMinusOne == 0) {
                         ctx.write(out.getUnsafe(0), promise);
                     } else if (sizeMinusOne > 0) {
+                        // 多次写入
+                        // 检查我们是否可以使用 void Promise 进行额外写入以减少 GC 压力
                         // Check if we can use a voidPromise for our extra writes to reduce GC-Pressure
                         // See https://github.com/netty/netty/issues/2525
                         if (promise == ctx.voidPromise()) {
@@ -121,6 +134,7 @@ public abstract class MessageToMessageEncoder<I> extends ChannelOutboundHandlerA
                         }
                     }
                 } finally {
+                    // 回收out
                     out.recycle();
                 }
             }

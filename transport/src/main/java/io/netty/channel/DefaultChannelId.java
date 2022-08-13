@@ -33,6 +33,7 @@ import static io.netty.util.internal.MacAddressUtil.parseMAC;
 
 /**
  * The default {@link ChannelId} implementation.
+ * ChannelId默认实现
  */
 public final class DefaultChannelId implements ChannelId {
 

@@ -81,7 +81,13 @@ public abstract class AbstractByteBufAllocator implements ByteBufAllocator {
         return buf;
     }
 
+    /**
+     * 是否倾向创建 Direct ByteBuf
+     */
     private final boolean directByDefault;
+    /**
+     * 空 ByteBuf 缓存
+     */
     private final ByteBuf emptyBuf;
 
     /**
@@ -102,6 +108,10 @@ public abstract class AbstractByteBufAllocator implements ByteBufAllocator {
         emptyBuf = new EmptyByteBuf(this);
     }
 
+    /**
+     * 创建ByteBuf对象
+     * @return
+     */
     @Override
     public ByteBuf buffer() {
         if (directByDefault) {
@@ -248,6 +258,12 @@ public abstract class AbstractByteBufAllocator implements ByteBufAllocator {
         return StringUtil.simpleClassName(this) + "(directByDefault: " + directByDefault + ')';
     }
 
+    /**
+     * 计算新的容量大小
+     * @param minNewCapacity
+     * @param maxCapacity
+     * @return
+     */
     @Override
     public int calculateNewCapacity(int minNewCapacity, int maxCapacity) {
         checkPositiveOrZero(minNewCapacity, "minNewCapacity");
@@ -258,10 +274,12 @@ public abstract class AbstractByteBufAllocator implements ByteBufAllocator {
         }
         final int threshold = CALCULATE_THRESHOLD; // 4 MiB page
 
+        // 等于4M直接返回
         if (minNewCapacity == threshold) {
             return threshold;
         }
 
+        // 如果超过阈值，不要加倍，而只是增加阈值，4M的往上增加
         // If over threshold, do not double but just increase by threshold.
         if (minNewCapacity > threshold) {
             int newCapacity = minNewCapacity / threshold * threshold;
@@ -274,6 +292,7 @@ public abstract class AbstractByteBufAllocator implements ByteBufAllocator {
         }
 
         // 64 <= newCapacity is a power of 2 <= threshold
+        // 64个字节或者是2倍扩容
         final int newCapacity = MathUtil.findNextPositivePowerOfTwo(Math.max(minNewCapacity, 64));
         return Math.min(newCapacity, maxCapacity);
     }

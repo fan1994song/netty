@@ -51,6 +51,7 @@ import java.util.List;
  * Be aware that you need to call {@link ReferenceCounted#retain()} on messages that are just passed through if they
  * are of type {@link ReferenceCounted}. This is needed as the {@link MessageToMessageCodec} will call
  * {@link ReferenceCounted#release()} on encoded / decoded messages.
+ * 消息编解码器,就是想encode、decode组合构成的编解码器
  */
 public abstract class MessageToMessageCodec<INBOUND_IN, OUTBOUND_IN> extends ChannelDuplexHandler {
 
@@ -95,6 +96,7 @@ public abstract class MessageToMessageCodec<INBOUND_IN, OUTBOUND_IN> extends Cha
     }
 
     /**
+     * 根据两个类型构造相关的匹配类，父类重写该方法，保证可以正确匹配，具体类实现该抽奖类时，会自行编写encode、decode的
      * Create a new instance.
      *
      * @param inboundMessageType    The type of messages to decode

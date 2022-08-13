@@ -56,15 +56,36 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
     @SuppressWarnings("unchecked")
     private static final Map.Entry<AttributeKey<?>, Object>[] EMPTY_ATTRIBUTE_ARRAY = new Map.Entry[0];
 
+    /**
+     * boss EventLoopGroup 对象
+     */
     volatile EventLoopGroup group;
+
+    /**
+     * channel工厂，用于创建channel对象
+     */
     @SuppressWarnings("deprecation")
     private volatile ChannelFactory<? extends C> channelFactory;
+    /**
+     * 本机地址
+     */
     private volatile SocketAddress localAddress;
 
+    /**
+     * option可选项
+     */
     // The order in which ChannelOptions are applied is important they may depend on each other for validation
     // purposes.
     private final Map<ChannelOption<?>, Object> options = new LinkedHashMap<ChannelOption<?>, Object>();
+
+    /**
+     * 属性集合
+     */
     private final Map<AttributeKey<?>, Object> attrs = new ConcurrentHashMap<AttributeKey<?>, Object>();
+
+    /**
+     * 处理器
+     */
     private volatile ChannelHandler handler;
 
     AbstractBootstrap() {
@@ -199,6 +220,7 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
     /**
      * Validate all the parameters. Sub-classes may override this, but should
      * call the super method in that case.
+     * 验证所有参数。子类可能会覆盖它，但在这种情况下应该调用super.validate(),避免检查遗漏
      */
     public B validate() {
         if (group == null) {
@@ -229,8 +251,10 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
 
     /**
      * Create a new {@link Channel} and bind it.
+     * 绑定本机地址并返回channelFuture，可以异步处理，也可以sync同步等待完成
      */
     public ChannelFuture bind() {
+        // 基础校验
         validate();
         SocketAddress localAddress = this.localAddress;
         if (localAddress == null) {
@@ -269,18 +293,22 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
     }
 
     private ChannelFuture doBind(final SocketAddress localAddress) {
+        // 初始化并注册channel对象
         final ChannelFuture regFuture = initAndRegister();
         final Channel channel = regFuture.channel();
-        if (regFuture.cause() != null) {
+        if (regFuture.cause() != null) {// 若出现异常，直接return
             return regFuture;
         }
 
+        // 注册完成
         if (regFuture.isDone()) {
             // At this point we know that the registration was complete and successful.
             ChannelPromise promise = channel.newPromise();
+            // 绑定channel的端口，并注册channel到selectionKey上
             doBind0(regFuture, channel, localAddress, promise);
             return promise;
         } else {
+            // 兜底的异常流程
             // Registration future is almost always fulfilled already, but just in case it's not.
             final PendingRegistrationPromise promise = new PendingRegistrationPromise(channel);
             regFuture.addListener(new ChannelFutureListener() {
@@ -307,6 +335,7 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
     final ChannelFuture initAndRegister() {
         Channel channel = null;
         try {
+            // 创建channel，初始化channel配置
             channel = channelFactory.newChannel();
             init(channel);
         } catch (Throwable t) {
@@ -320,11 +349,14 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
             return new DefaultChannelPromise(new FailedChannel(), GlobalEventExecutor.INSTANCE).setFailure(t);
         }
 
+        // 注册channel到 eventLoopGroup 中，其实就是atomicInteger自增取余，从eventLoopGroup中得到目标eventLoop线程
         ChannelFuture regFuture = config().group().register(channel);
         if (regFuture.cause() != null) {
+            // 已注册成功,关闭channel
             if (channel.isRegistered()) {
                 channel.close();
             } else {
+                // 强制关闭channel
                 channel.unsafe().closeForcibly();
             }
         }
@@ -349,9 +381,11 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
 
         // This method is invoked before channelRegistered() is triggered.  Give user handlers a chance to set up
         // the pipeline in its channelRegistered() implementation.
+        // 在触发 channelRegistered() 之前调用此方法。让用户处理程序有机会在其 channelRegistered() 实现中设置管道
         channel.eventLoop().execute(new Runnable() {
             @Override
             public void run() {
+                // 成功返回结果，根据结果的状态决定是正常还是异常关闭
                 if (regFuture.isSuccess()) {
                     channel.bind(localAddress, promise).addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
                 } else {
@@ -363,6 +397,7 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
 
     /**
      * the {@link ChannelHandler} to use for serving the requests.
+     * 设置创建 Channel 的处理器
      */
     public B handler(ChannelHandler handler) {
         this.handler = ObjectUtil.checkNotNull(handler, "handler");

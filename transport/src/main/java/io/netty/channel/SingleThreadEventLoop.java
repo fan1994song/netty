@@ -32,9 +32,15 @@ import java.util.concurrent.ThreadFactory;
  */
 public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor implements EventLoop {
 
+    /**
+     * 默认任务队列最大数量
+     */
     protected static final int DEFAULT_MAX_PENDING_TASKS = Math.max(16,
             SystemPropertyUtil.getInt("io.netty.eventLoop.maxPendingTasks", Integer.MAX_VALUE));
 
+    /**
+     * 尾部任务队列，执行在 {taskQueue} 之后
+     */
     private final Queue<Runnable> tailTasks;
 
     protected SingleThreadEventLoop(EventLoopGroup parent, ThreadFactory threadFactory, boolean addTaskWakesUp) {
@@ -99,20 +105,23 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
 
     /**
      * Adds a task to be run once at the end of next (or current) {@code eventloop} iteration.
-     *
+     * 添加要在下一次（或当前）eventloop 迭代结束时运行一次的任务
      * @param task to be added.
      */
     @UnstableApi
     public final void executeAfterEventLoopIteration(Runnable task) {
         ObjectUtil.checkNotNull(task, "task");
+        // 关闭状态，拒绝
         if (isShutdown()) {
             reject();
         }
 
+        // 添加到任务队列
         if (!tailTasks.offer(task)) {
             reject(task);
         }
 
+        // 唤醒线程
         if (!(task instanceof LazyRunnable) && wakesUpForTask(task)) {
             wakeup(inEventLoop());
         }

@@ -32,6 +32,7 @@ import static io.netty.util.internal.ObjectUtil.checkPositive;
 import static java.lang.Integer.MAX_VALUE;
 
 /**
+ * 以类似流的方式将字节从一个 {@link ByteBuf} 解码为另一种消息类型
  * {@link ChannelInboundHandlerAdapter} which decodes bytes in a stream-like fashion from one {@link ByteBuf} to an
  * other Message type.
  *
@@ -75,6 +76,7 @@ import static java.lang.Integer.MAX_VALUE;
 public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter {
 
     /**
+     * 通过使用内存副本将 ByteBuf 合并为一个 ByteBuf 来累积 ByteBuf
      * Cumulate {@link ByteBuf}s by merge them into one {@link ByteBuf}'s, using memory copies.
      */
     public static final Cumulator MERGE_CUMULATOR = new Cumulator() {
@@ -86,6 +88,7 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
                 return in;
             }
             try {
+                // 输入流可读取的字节数
                 final int required = in.readableBytes();
                 if (required > cumulation.maxWritableBytes() ||
                     required > cumulation.maxFastWritableBytes() && cumulation.refCnt() > 1 ||
@@ -96,6 +99,7 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
                     //   assumed to be shared (e.g. refCnt() > 1) and the reallocation may not be safe.
                     return expandCumulation(alloc, cumulation, in);
                 }
+                // 流数据写入cumulation
                 cumulation.writeBytes(in, in.readerIndex(), required);
                 in.readerIndex(in.writerIndex());
                 return cumulation;
@@ -108,6 +112,7 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
     };
 
     /**
+     * 通过将 {@link ByteBuf} 添加到 {@link CompositeByteBuf} 来累积 {@link ByteBuf}，因此尽可能不进行内存复制
      * Cumulate {@link ByteBuf}s by add them to a {@link CompositeByteBuf} and so do no memory copy whenever possible.
      * Be aware that {@link CompositeByteBuf} use a more complex indexing implementation so depending on your use-case
      * and the decoder implementation this may be slower than just use the {@link #MERGE_CUMULATOR}.
@@ -121,16 +126,20 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
             }
             CompositeByteBuf composite = null;
             try {
+                // 是 CompositeByteBuf 类型，直接使用
                 if (cumulation instanceof CompositeByteBuf && cumulation.refCnt() == 1) {
                     composite = (CompositeByteBuf) cumulation;
                     // Writer index must equal capacity if we are going to "write"
                     // new components to the end
+                    // 如果我们要将新组件“写入”到最后，则写入器索引必须等于容量
                     if (composite.writerIndex() != composite.capacity()) {
                         composite.capacity(composite.writerIndex());
                     }
                 } else {
+                    // 原来不是 CompositeByteBuf 类型，创建，并添加到其中
                     composite = alloc.compositeBuffer(Integer.MAX_VALUE).addFlattenedComponents(true, cumulation);
                 }
+                // 添加 in 到 composite 中，避免内存拷贝
                 composite.addFlattenedComponents(true, in);
                 in = null;
                 return composite;
@@ -151,9 +160,21 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
     private static final byte STATE_CALLING_CHILD_DECODE = 1;
     private static final byte STATE_HANDLER_REMOVED_PENDING = 2;
 
+    /**
+     * 已累积的 ByteBuf 对象
+     */
     ByteBuf cumulation;
+    /**
+     * 累加器
+     */
     private Cumulator cumulator = MERGE_CUMULATOR;
+    /**
+     * 是否每次只解码一条消息，默认为 false
+     */
     private boolean singleDecode;
+    /**
+     * 是否首次读取，即 cumulation 为空
+     */
     private boolean first;
 
     /**
@@ -165,6 +186,11 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
     private boolean selfFiredChannelRead;
 
     /**
+     * 解码状态
+     * 0 - 初始化
+     * 1 - 调用 decode 方法中，正在进行解码
+     * 2 - 准备移除
+     *
      * A bitmask where the bits are defined as
      * <ul>
      *     <li>{@link #STATE_INIT}</li>
@@ -173,10 +199,17 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
      * </ul>
      */
     private byte decodeState = STATE_INIT;
+    /**
+     * 读取释放阀值
+     */
     private int discardAfterReads = 16;
+    /**
+     * 已读取次数
+     */
     private int numReads;
 
     protected ByteToMessageDecoder() {
+        // 校验，不可共享
         ensureNotSharable();
     }
 
@@ -241,18 +274,23 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
 
     @Override
     public final void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
+        // 状态处于 STATE_CALLING_CHILD_DECODE 时，标记状态为 STATE_HANDLER_REMOVED_PENDING
         if (decodeState == STATE_CALLING_CHILD_DECODE) {
             decodeState = STATE_HANDLER_REMOVED_PENDING;
             return;
         }
         ByteBuf buf = cumulation;
         if (buf != null) {
+            // 直接将此设置为null，因此我们确定我们不再使用任何其他方法访问它
             // Directly set this to null, so we are sure we not access it in any other method here anymore.
             cumulation = null;
             numReads = 0;
             int readable = buf.readableBytes();
+            // 有可读字节
             if (readable > 0) {
+                // 读取剩余字节，并释放 buf
                 ctx.fireChannelRead(buf);
+                // 触发 Channel ReadComplete 到下一个节点
                 ctx.fireChannelReadComplete();
             } else {
                 buf.release();
@@ -270,12 +308,16 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         if (msg instanceof ByteBuf) {
+            // 创建CodecOutputList对象
             selfFiredChannelRead = true;
             CodecOutputList out = CodecOutputList.newInstance();
             try {
+                // 首次
                 first = cumulation == null;
+                // 根据first 投递 cumulation 入参
                 cumulation = cumulator.cumulate(ctx.alloc(),
                         first ? Unpooled.EMPTY_BUFFER : cumulation, (ByteBuf) msg);
+                // 执行解码
                 callDecode(ctx, cumulation, out);
             } catch (DecoderException e) {
                 throw e;
@@ -283,25 +325,33 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
                 throw new DecoderException(e);
             } finally {
                 try {
+                    // cumulation 中所有数据被读取完，直接释放全部
                     if (cumulation != null && !cumulation.isReadable()) {
                         numReads = 0;
                         cumulation.release();
                         cumulation = null;
+                    // 读取次数到达 discardAfterReads 上限，释放部分的已读
                     } else if (++numReads >= discardAfterReads) {
                         // We did enough reads already try to discard some bytes, so we not risk to see a OOME.
                         // See https://github.com/netty/netty/issues/4275
+                        // 重置 numReads 次数
                         numReads = 0;
+                        // 释放部分的已读
                         discardSomeReadBytes();
                     }
-
+                    // 解码消息的数量
                     int size = out.size();
+                    // 是否解码到消息
                     firedChannelRead |= out.insertSinceRecycled();
+                    // 触发 Channel Read 事件，可能是多条消息
                     fireChannelRead(ctx, out, size);
                 } finally {
+                    // 回收 CodecOutputList 对象
                     out.recycle();
                 }
             }
         } else {
+            // 触发 Channel Read 事件到下一个节点
             ctx.fireChannelRead(msg);
         }
     }
@@ -330,16 +380,21 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
 
     @Override
     public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
+        // 重置 numReads
         numReads = 0;
+        // 释放部分的已读
         discardSomeReadBytes();
+        // 未解码到消息，并且未开启自动读取，则再次发起读取，期望读取到更多数据，以便解码到消息，重置 decodeWasNull
         if (selfFiredChannelRead && !firedChannelRead && !ctx.channel().config().isAutoRead()) {
             ctx.read();
         }
         firedChannelRead = false;
+        // 触发 Channel ReadComplete 事件到下一个节点
         ctx.fireChannelReadComplete();
     }
 
     protected final void discardSomeReadBytes() {
+        // 如果用户使用了 slice().retain() 和 duplicate().retain() 使 refCnt > 1 ，表明该累积区还在被用户使用，丢弃数据可能导致用户的困惑，所以须确定用户不再使用该累积区的已读数据，此时才丢弃
         if (cumulation != null && !first && cumulation.refCnt() == 1) {
             // discard some bytes if possible to make more room in the
             // buffer but only if the refCnt == 1  as otherwise the user may have
@@ -369,8 +424,10 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
     }
 
     private void channelInputClosed(ChannelHandlerContext ctx, boolean callChannelInactive) {
+        // 创建 CodecOutputList 对象
         CodecOutputList out = CodecOutputList.newInstance();
         try {
+            // 当 Channel 读取关闭时，执行解码剩余消息的逻辑
             channelInputClosed(ctx, out);
         } catch (DecoderException e) {
             throw e;
@@ -378,20 +435,24 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
             throw new DecoderException(e);
         } finally {
             try {
+                // 释放 cumulation
                 if (cumulation != null) {
                     cumulation.release();
                     cumulation = null;
                 }
                 int size = out.size();
+                // 触发 Channel Read 事件到下一个节点。可能是多条消息
                 fireChannelRead(ctx, out, size);
                 if (size > 0) {
                     // Something was read, call fireChannelReadComplete()
                     ctx.fireChannelReadComplete();
                 }
+                // 若是inactive状态,触发inactive事件通知
                 if (callChannelInactive) {
                     ctx.fireChannelInactive();
                 }
             } finally {
+                // 回收CodecOutputList对象
                 // Recycle in all cases
                 out.recycle();
             }
@@ -404,6 +465,7 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
      */
     void channelInputClosed(ChannelHandlerContext ctx, List<Object> out) throws Exception {
         if (cumulation != null) {
+            // 执行解码
             callDecode(ctx, cumulation, out);
             // If callDecode(...) removed the handle from the pipeline we should not call decodeLast(...) as this would
             // be unexpected.
@@ -411,9 +473,11 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
                 // Use Unpooled.EMPTY_BUFFER if cumulation become null after calling callDecode(...).
                 // See https://github.com/netty/netty/issues/10802.
                 ByteBuf buffer = cumulation == null ? Unpooled.EMPTY_BUFFER : cumulation;
+                // 最后一次，执行解码
                 decodeLast(ctx, buffer, out);
             }
         } else {
+            // 最后一次，执行解码
             decodeLast(ctx, Unpooled.EMPTY_BUFFER, out);
         }
     }
@@ -428,11 +492,15 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
      */
     protected void callDecode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) {
         try {
+            // 循环读取，直到不可读
             while (in.isReadable()) {
+                // 记录
                 final int outSize = out.size();
-
+                // out 非空，说明上一次解码有解码到消息
                 if (outSize > 0) {
+                    // 解码后的消息触发read事件
                     fireChannelRead(ctx, out, outSize);
+                    // 清空
                     out.clear();
 
                     // Check if this handler was removed before continuing with decoding.
@@ -440,36 +508,45 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
                     //
                     // See:
                     // - https://github.com/netty/netty/issues/4635
+                    // 用户主动删除该 Handler ，继续操作 in 是不安全的
                     if (ctx.isRemoved()) {
                         break;
                     }
                 }
 
+                // 可读字节
                 int oldInputLength = in.readableBytes();
+                // 解码，读取数据到out中，在解码完成后，进行移除
                 decodeRemovalReentryProtection(ctx, in, out);
 
                 // Check if this handler was removed before continuing the loop.
                 // If it was removed, it is not safe to continue to operate on the buffer.
                 //
                 // See https://github.com/netty/netty/issues/1664
+                // 用户主动删除该 Handler ，继续操作 in 是不安全的
                 if (ctx.isRemoved()) {
                     break;
                 }
 
+                // 读取到的为空
                 if (out.isEmpty()) {
+                    // 如果未读取任何字节，结束循环
                     if (oldInputLength == in.readableBytes()) {
                         break;
+                        // 如果可读字节发生变化，继续读取
                     } else {
                         continue;
                     }
                 }
 
+                // 如果解码了消息，但是可读字节数未变，抛出 DecoderException 异常。说明，有问题
                 if (oldInputLength == in.readableBytes()) {
                     throw new DecoderException(
                             StringUtil.simpleClassName(getClass()) +
                                     ".decode() did not read anything but decoded a message.");
                 }
 
+                // 如果开启 singleDecode ，表示只解析一次，结束循环
                 if (isSingleDecode()) {
                     break;
                 }
@@ -505,12 +582,16 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
      */
     final void decodeRemovalReentryProtection(ChannelHandlerContext ctx, ByteBuf in, List<Object> out)
             throws Exception {
+        // 变为解码中状态
         decodeState = STATE_CALLING_CHILD_DECODE;
         try {
+            // 抽奖方案decode自行实现
             decode(ctx, in, out);
         } finally {
+            // 设置为起始阶段
             boolean removePending = decodeState == STATE_HANDLER_REMOVED_PENDING;
             decodeState = STATE_INIT;
+            // 移除中状态时,读事件下发，移除当前handler
             if (removePending) {
                 fireChannelRead(ctx, out, out.size());
                 out.clear();
@@ -535,9 +616,11 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
     }
 
     static ByteBuf expandCumulation(ByteBufAllocator alloc, ByteBuf oldCumulation, ByteBuf in) {
+        // 计算总计字节数
         int oldBytes = oldCumulation.readableBytes();
         int newBytes = in.readableBytes();
         int totalBytes = oldBytes + newBytes;
+        // 使用calculateNewCapacity计算新的容量，读取数据返回新的ByteBuf对象
         ByteBuf newCumulation = alloc.buffer(alloc.calculateNewCapacity(totalBytes, MAX_VALUE));
         ByteBuf toRelease = newCumulation;
         try {

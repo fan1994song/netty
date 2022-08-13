@@ -82,6 +82,7 @@ public final class ReferenceCountUtil {
     }
 
     /**
+     * 若消息是ReferenceCounted类型的，release该对象，便于释放内存，引用计数法(ByteBuf释放堆对堆外内存的强引用)
      * Try to call {@link ReferenceCounted#release()} if the specified message implements {@link ReferenceCounted}.
      * If the specified message doesn't implement {@link ReferenceCounted}, this method does nothing.
      */

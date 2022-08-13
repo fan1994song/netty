@@ -223,6 +223,7 @@ public interface ChannelPipeline
         extends ChannelInboundInvoker, ChannelOutboundInvoker, Iterable<Entry<String, ChannelHandler>> {
 
     /**
+     * 加入到头部
      * Inserts a {@link ChannelHandler} at the first position of this pipeline.
      *
      * @param name     the name of the handler to insert first
@@ -251,6 +252,7 @@ public interface ChannelPipeline
     ChannelPipeline addFirst(EventExecutorGroup group, String name, ChannelHandler handler);
 
     /**
+     * 加入到尾部
      * Appends a {@link ChannelHandler} at the last position of this pipeline.
      *
      * @param name     the name of the handler to append
@@ -264,6 +266,7 @@ public interface ChannelPipeline
     ChannelPipeline addLast(String name, ChannelHandler handler);
 
     /**
+     * 加入到尾部
      * Appends a {@link ChannelHandler} at the last position of this pipeline.
      *
      * @param group    the {@link EventExecutorGroup} which will be used to execute the {@link ChannelHandler}
@@ -279,6 +282,7 @@ public interface ChannelPipeline
     ChannelPipeline addLast(EventExecutorGroup group, String name, ChannelHandler handler);
 
     /**
+     * 在此管道的现有处理程序之前插入
      * Inserts a {@link ChannelHandler} before an existing handler of this
      * pipeline.
      *
@@ -296,6 +300,7 @@ public interface ChannelPipeline
     ChannelPipeline addBefore(String baseName, String name, ChannelHandler handler);
 
     /**
+     * 在此管道的现有处理程序之前插入
      * Inserts a {@link ChannelHandler} before an existing handler of this
      * pipeline.
      *
@@ -315,6 +320,7 @@ public interface ChannelPipeline
     ChannelPipeline addBefore(EventExecutorGroup group, String baseName, String name, ChannelHandler handler);
 
     /**
+     * 在此管道的现有处理程序之后插入
      * Inserts a {@link ChannelHandler} after an existing handler of this
      * pipeline.
      *
@@ -332,6 +338,7 @@ public interface ChannelPipeline
     ChannelPipeline addAfter(String baseName, String name, ChannelHandler handler);
 
     /**
+     * 在此管道的现有处理程序之后插入
      * Inserts a {@link ChannelHandler} after an existing handler of this
      * pipeline.
      *
@@ -351,6 +358,7 @@ public interface ChannelPipeline
     ChannelPipeline addAfter(EventExecutorGroup group, String baseName, String name, ChannelHandler handler);
 
     /**
+     * 批量
      * Inserts {@link ChannelHandler}s at the first position of this pipeline.
      *
      * @param handlers  the handlers to insert first
@@ -359,6 +367,7 @@ public interface ChannelPipeline
     ChannelPipeline addFirst(ChannelHandler... handlers);
 
     /**
+     * 批量
      * Inserts {@link ChannelHandler}s at the first position of this pipeline.
      *
      * @param group     the {@link EventExecutorGroup} which will be used to execute the {@link ChannelHandler}s
@@ -369,6 +378,7 @@ public interface ChannelPipeline
     ChannelPipeline addFirst(EventExecutorGroup group, ChannelHandler... handlers);
 
     /**
+     * 批量
      * Inserts {@link ChannelHandler}s at the last position of this pipeline.
      *
      * @param handlers  the handlers to insert last
@@ -377,6 +387,7 @@ public interface ChannelPipeline
     ChannelPipeline addLast(ChannelHandler... handlers);
 
     /**
+     * 批量
      * Inserts {@link ChannelHandler}s at the last position of this pipeline.
      *
      * @param group     the {@link EventExecutorGroup} which will be used to execute the {@link ChannelHandler}s
@@ -387,6 +398,7 @@ public interface ChannelPipeline
     ChannelPipeline addLast(EventExecutorGroup group, ChannelHandler... handlers);
 
     /**
+     * 从pipeline中移除某个ChannelHandler
      * Removes the specified {@link ChannelHandler} from this pipeline.
      *
      * @param  handler          the {@link ChannelHandler} to remove
@@ -399,6 +411,7 @@ public interface ChannelPipeline
     ChannelPipeline remove(ChannelHandler handler);
 
     /**
+     * 从此管道中删除具有指定名称的 {@link ChannelHandler}
      * Removes the {@link ChannelHandler} with the specified name from this pipeline.
      *
      * @param  name             the name under which the {@link ChannelHandler} was stored.
@@ -413,6 +426,7 @@ public interface ChannelPipeline
     ChannelHandler remove(String name);
 
     /**
+     * 从此管道中删除具有指定类型的  ChannelHandler
      * Removes the {@link ChannelHandler} of the specified type from this pipeline.
      *
      * @param <T>           the type of the handler
@@ -428,6 +442,7 @@ public interface ChannelPipeline
     <T extends ChannelHandler> T remove(Class<T> handlerType);
 
     /**
+     * 移除首位
      * Removes the first {@link ChannelHandler} in this pipeline.
      *
      * @return the removed handler
@@ -438,6 +453,7 @@ public interface ChannelPipeline
     ChannelHandler removeFirst();
 
     /**
+     * 移除末尾
      * Removes the last {@link ChannelHandler} in this pipeline.
      *
      * @return the removed handler
@@ -448,6 +464,7 @@ public interface ChannelPipeline
     ChannelHandler removeLast();
 
     /**
+     * 替换
      * Replaces the specified {@link ChannelHandler} with a new handler in this pipeline.
      *
      * @param  oldHandler    the {@link ChannelHandler} to be replaced
@@ -468,6 +485,7 @@ public interface ChannelPipeline
     ChannelPipeline replace(ChannelHandler oldHandler, String newName, ChannelHandler newHandler);
 
     /**
+     * 替换
      * Replaces the {@link ChannelHandler} of the specified name with a new handler in this pipeline.
      *
      * @param  oldName       the name of the {@link ChannelHandler} to be replaced
@@ -488,6 +506,7 @@ public interface ChannelPipeline
     ChannelHandler replace(String oldName, String newName, ChannelHandler newHandler);
 
     /**
+     * 替换
      * Replaces the {@link ChannelHandler} of the specified type with a new handler in this pipeline.
      *
      * @param  oldHandlerType   the type of the handler to be removed
@@ -583,6 +602,7 @@ public interface ChannelPipeline
     ChannelHandlerContext context(Class<? extends ChannelHandler> handlerType);
 
     /**
+     * 返回此管道附加到的channel
      * Returns the {@link Channel} that this pipeline is attached to.
      *
      * @return the channel. {@code null} if this pipeline is not attached yet.
@@ -590,43 +610,88 @@ public interface ChannelPipeline
     Channel channel();
 
     /**
+     * 返回所有channelHandler的名称
      * Returns the {@link List} of the handler names.
      */
     List<String> names();
 
     /**
+     * 名称+handler转map
      * Converts this pipeline into an ordered {@link Map} whose keys are
      * handler names and whose values are handlers.
      */
     Map<String, ChannelHandler> toMap();
 
+    /**
+     * 注册事件
+     * @return
+     */
     @Override
     ChannelPipeline fireChannelRegistered();
 
+    /**
+     * 取消注册事件
+     * @return
+     */
     @Override
     ChannelPipeline fireChannelUnregistered();
 
+    /**
+     * channel活跃事件
+     * * @return
+     */
     @Override
     ChannelPipeline fireChannelActive();
 
+    /**
+     * channel失活事件
+     * @return
+     */
     @Override
     ChannelPipeline fireChannelInactive();
 
+    /**
+     * 捕获异常事件
+     * @param cause
+     * @return
+     */
     @Override
     ChannelPipeline fireExceptionCaught(Throwable cause);
 
+    /**
+     * 触发用户事件，通常是IdleStateHandler，心跳等使用场景
+     * @param event
+     * @return
+     */
     @Override
     ChannelPipeline fireUserEventTriggered(Object event);
 
+    /**
+     * 读事件
+     * @param msg
+     * @return
+     */
     @Override
     ChannelPipeline fireChannelRead(Object msg);
 
+    /**
+     * 读完成事件
+     * @return
+     */
     @Override
     ChannelPipeline fireChannelReadComplete();
 
+    /**
+     * channel可写性已更改
+     * @return
+     */
     @Override
     ChannelPipeline fireChannelWritabilityChanged();
 
+    /**
+     * 刷新事件
+     * @return
+     */
     @Override
     ChannelPipeline flush();
 }

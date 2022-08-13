@@ -143,6 +143,11 @@ public abstract class DefaultMaxMessagesRecvByteBufAllocator implements MaxMessa
             return continueReading(defaultMaybeMoreSupplier);
         }
 
+        /**
+         * 是否可以继续读取的判断
+         * @param maybeMoreDataSupplier A supplier that determines if there maybe more data to read.
+         * @return
+         */
         @Override
         public boolean continueReading(UncheckedBooleanSupplier maybeMoreDataSupplier) {
             return config.isAutoRead() &&

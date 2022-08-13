@@ -211,18 +211,21 @@ public interface Channel extends AttributeMap, ChannelOutboundInvoker, Comparabl
         /**
          * Return the assigned {@link RecvByteBufAllocator.Handle} which will be used to allocate {@link ByteBuf}'s when
          * receiving data.
+         * ByteBuf 分配器的处理器
          */
         RecvByteBufAllocator.Handle recvBufAllocHandle();
 
         /**
          * Return the {@link SocketAddress} to which is bound local or
          * {@code null} if none.
+         * 本地地址
          */
         SocketAddress localAddress();
 
         /**
          * Return the {@link SocketAddress} to which is bound remote or
          * {@code null} if none is bound yet.
+         * 远端地址
          */
         SocketAddress remoteAddress();
 
@@ -296,6 +299,7 @@ public interface Channel extends AttributeMap, ChannelOutboundInvoker, Comparabl
 
         /**
          * Returns the {@link ChannelOutboundBuffer} of the {@link Channel} where the pending write requests are stored.
+         * 返回存储待处理写入请求的 Channel 的 ChannelOutboundBuffer
          */
         ChannelOutboundBuffer outboundBuffer();
     }

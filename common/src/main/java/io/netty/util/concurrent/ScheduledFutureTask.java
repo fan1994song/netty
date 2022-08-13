@@ -26,10 +26,17 @@ import java.util.concurrent.TimeUnit;
 @SuppressWarnings("ComparableImplementedButEqualsNotOverridden")
 final class ScheduledFutureTask<V> extends PromiseTask<V> implements ScheduledFuture<V>, PriorityQueueNode {
     // set once when added to priority queue
+    /**
+     * 任务ID
+     */
     private long id;
 
+    /**
+     * 可执行时间
+     */
     private long deadlineNanos;
     /* 0 - no repeat, >0 - repeat at fixed rate, <0 - repeat with fixed delay */
+    // 0 - 不重复，>0 - 以固定速率重复，<0 - 以固定延迟重复
     private final long periodNanos;
 
     private int queueIndex = INDEX_NOT_IN_QUEUE;
@@ -115,12 +122,18 @@ final class ScheduledFutureTask<V> extends PromiseTask<V> implements ScheduledFu
         return unit.convert(delayNanos(), TimeUnit.NANOSECONDS);
     }
 
+    /**
+     * 猜测：因为放入优先级队列，所以需要该方法
+     * @param o
+     * @return
+     */
     @Override
     public int compareTo(Delayed o) {
         if (this == o) {
             return 0;
         }
 
+        // 根据执行时间戳、ID比较大小，猜测是根据排序优先级有关
         ScheduledFutureTask<?> that = (ScheduledFutureTask<?>) o;
         long d = deadlineNanos() - that.deadlineNanos();
         if (d < 0) {
@@ -137,32 +150,45 @@ final class ScheduledFutureTask<V> extends PromiseTask<V> implements ScheduledFu
 
     @Override
     public void run() {
+        // 断言，单元测试起作用
         assert executor().inEventLoop();
         try {
+            // 未到执行时间
             if (delayNanos() > 0L) {
                 // Not yet expired, need to add or remove from queue
                 if (isCancelled()) {
+                    // 若取消，移除。怎么做的取消状态？？？
                     scheduledExecutor().scheduledTaskQueue().removeTyped(this);
                 } else {
+                    // 否则，id++放回队列中，后续执行
                     scheduledExecutor().scheduleFromEventLoop(this);
                 }
                 return;
             }
+            // 单次定时任务
             if (periodNanos == 0) {
+                // 执行时期CAS设置不可取消状态
                 if (setUncancellableInternal()) {
+                    // 执行任务填充结果
                     V result = runTask();
                     setSuccessInternal(result);
                 }
             } else {
+                // 周期性定时任务
                 // check if is done as it may was cancelled
+                // 检查是否已完成，因为它可能已被取消
                 if (!isCancelled()) {
+                    // 执行任务
                     runTask();
+                    // 若 eventLoop 线程没有关闭
                     if (!executor().isShutdown()) {
+                        // 根据periodNanos数值计算下次执行时间戳
                         if (periodNanos > 0) {
                             deadlineNanos += periodNanos;
                         } else {
                             deadlineNanos = scheduledExecutor().getCurrentTimeNanos() - periodNanos;
                         }
+                        // 不是取消状态，再次放入定时任务中
                         if (!isCancelled()) {
                             scheduledExecutor().scheduledTaskQueue().add(this);
                         }
@@ -170,6 +196,7 @@ final class ScheduledFutureTask<V> extends PromiseTask<V> implements ScheduledFu
                 }
             }
         } catch (Throwable cause) {
+            // 如出现异常，放入异常信息，清除任务
             setFailureInternal(cause);
         }
     }
@@ -180,7 +207,7 @@ final class ScheduledFutureTask<V> extends PromiseTask<V> implements ScheduledFu
 
     /**
      * {@inheritDoc}
-     *
+     * 任务取消并移除，设置DefaultPromise的取消状态，移除任务
      * @param mayInterruptIfRunning this value has no effect in this implementation.
      */
     @Override
@@ -192,6 +219,11 @@ final class ScheduledFutureTask<V> extends PromiseTask<V> implements ScheduledFu
         return canceled;
     }
 
+    /**
+     * 任务取消，但不移除
+     * @param mayInterruptIfRunning
+     * @return
+     */
     boolean cancelWithoutRemove(boolean mayInterruptIfRunning) {
         return super.cancel(mayInterruptIfRunning);
     }

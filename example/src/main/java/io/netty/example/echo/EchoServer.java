@@ -39,6 +39,7 @@ public final class EchoServer {
     static final int PORT = Integer.parseInt(System.getProperty("port", "8007"));
 
     public static void main(String[] args) throws Exception {
+        // 配置SSL签名，来进行消息的协商密钥操作
         // Configure SSL.
         final SslContext sslCtx;
         if (SSL) {
@@ -49,6 +50,7 @@ public final class EchoServer {
         }
 
         // Configure the server.
+        // 一个boss线程（用于服务端接受客户端的连接）、多个读写事件的worker线程
         EventLoopGroup bossGroup = new NioEventLoopGroup(1);
         EventLoopGroup workerGroup = new NioEventLoopGroup();
         final EchoServerHandler serverHandler = new EchoServerHandler();
@@ -59,6 +61,7 @@ public final class EchoServer {
              .option(ChannelOption.SO_BACKLOG, 100)
              .handler(new LoggingHandler(LogLevel.INFO))
              .childHandler(new ChannelInitializer<SocketChannel>() {
+                 // 设置连入服务端的 Client 的 SocketChannel 的处理器
                  @Override
                  public void initChannel(SocketChannel ch) throws Exception {
                      ChannelPipeline p = ch.pipeline();
@@ -70,12 +73,15 @@ public final class EchoServer {
                  }
              });
 
+            // 绑定端口，同步等待启动成功
             // Start the server.
             ChannelFuture f = b.bind(PORT).sync();
 
+            // 监听服务器关闭，阻塞等待
             // Wait until the server socket is closed.
             f.channel().closeFuture().sync();
         } finally {
+            // 两个eventLoopGroup优雅关闭
             // Shut down all event loops to terminate all threads.
             bossGroup.shutdownGracefully();
             workerGroup.shutdownGracefully();

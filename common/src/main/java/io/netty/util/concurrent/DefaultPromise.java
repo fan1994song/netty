@@ -36,13 +36,18 @@ public class DefaultPromise<V> extends AbstractFuture<V> implements Promise<V> {
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(DefaultPromise.class);
     private static final InternalLogger rejectedExecutionLogger =
             InternalLoggerFactory.getInstance(DefaultPromise.class.getName() + ".rejectedExecution");
+    // 可以嵌套的Listener的最大层数，可见最大值为8
     private static final int MAX_LISTENER_STACK_DEPTH = Math.min(8,
             SystemPropertyUtil.getInt("io.netty.defaultPromise.maxListenerStackDepth", 8));
+    // result字段由使用RESULT_UPDATER更新
     @SuppressWarnings("rawtypes")
     private static final AtomicReferenceFieldUpdater<DefaultPromise, Object> RESULT_UPDATER =
             AtomicReferenceFieldUpdater.newUpdater(DefaultPromise.class, Object.class, "result");
+    // 此处的Signal是Netty定义的类，继承自Error，异步操作成功且结果为null时设置为改值
     private static final Object SUCCESS = new Object();
+    // 异步操作不可取消
     private static final Object UNCANCELLABLE = new Object();
+    // 异步操作失败时保存异常原因
     private static final CauseHolder CANCELLATION_CAUSE_HOLDER = new CauseHolder(
             StacklessCancellationException.newInstance(DefaultPromise.class, "cancel(...)"));
     private static final StackTraceElement[] CANCELLATION_STACK = CANCELLATION_CAUSE_HOLDER.cause.getStackTrace();
@@ -86,7 +91,7 @@ public class DefaultPromise<V> extends AbstractFuture<V> implements Promise<V> {
     /**
      * See {@link #executor()} for expectations of the executor.
      */
-    protected DefaultPromise() {
+    public DefaultPromise() {
         // only for subclasses
         executor = null;
     }
@@ -246,6 +251,7 @@ public class DefaultPromise<V> extends AbstractFuture<V> implements Promise<V> {
 
         checkDeadLock();
 
+        // 阻塞等待结果
         synchronized (this) {
             while (!isDone()) {
                 incWaiters();
@@ -480,22 +486,28 @@ public class DefaultPromise<V> extends AbstractFuture<V> implements Promise<V> {
                 checkNotNull(listener, "listener"));
     }
 
+    /**
+     * 通知回调方法
+     */
     private void notifyListeners() {
         EventExecutor executor = executor();
-        if (executor.inEventLoop()) {
+        if (executor.inEventLoop()) {//执行线程为指定线程
             final InternalThreadLocalMap threadLocals = InternalThreadLocalMap.get();
-            final int stackDepth = threadLocals.futureListenerStackDepth();
+            final int stackDepth = threadLocals.futureListenerStackDepth();// 嵌套层数
             if (stackDepth < MAX_LISTENER_STACK_DEPTH) {
+                // 执行前增加嵌套层数
                 threadLocals.setFutureListenerStackDepth(stackDepth + 1);
                 try {
                     notifyListenersNow();
                 } finally {
+                    // 执行完毕，无论如何都要回滚嵌套层数
                     threadLocals.setFutureListenerStackDepth(stackDepth);
                 }
                 return;
             }
         }
 
+        // 外部线程则提交任务给执行线程
         safeExecute(executor, new Runnable() {
             @Override
             public void run() {
@@ -513,6 +525,7 @@ public class DefaultPromise<V> extends AbstractFuture<V> implements Promise<V> {
                                                                   final Future<?> future,
                                                                   final GenericFutureListener<?> listener) {
         if (executor.inEventLoop()) {
+            // 线程的ThreaLocal数据
             final InternalThreadLocalMap threadLocals = InternalThreadLocalMap.get();
             final int stackDepth = threadLocals.futureListenerStackDepth();
             if (stackDepth < MAX_LISTENER_STACK_DEPTH) {
@@ -536,7 +549,9 @@ public class DefaultPromise<V> extends AbstractFuture<V> implements Promise<V> {
 
     private void notifyListenersNow() {
         Object listeners;
+        // 此时外部线程可能会执行添加Listener操作，所以需要同步
         synchronized (this) {
+            // 正在通知或已没有监听者（外部线程删除）直接返回
             // Only proceed if there are listeners to notify and we are not already notifying listeners.
             if (notifyingListeners || this.listeners == null) {
                 return;
@@ -547,8 +562,10 @@ public class DefaultPromise<V> extends AbstractFuture<V> implements Promise<V> {
         }
         for (;;) {
             if (listeners instanceof DefaultFutureListeners) {
+                // 多个通知
                 notifyListeners0((DefaultFutureListeners) listeners);
             } else {
+                // 单个通知
                 notifyListener0(this, (GenericFutureListener<?>) listeners);
             }
             synchronized (this) {

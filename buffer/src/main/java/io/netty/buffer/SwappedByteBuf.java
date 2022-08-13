@@ -29,6 +29,7 @@ import java.nio.channels.ScatteringByteChannel;
 import java.nio.charset.Charset;
 
 /**
+ * 构建具有切换字节序功能的 ByteBuf 对象
  * Wrapper which swap the {@link ByteOrder} of a {@link ByteBuf}.
  *
  * @deprecated use the Little Endian accessors, e.g. {@code getShortLE}, {@code getIntLE}

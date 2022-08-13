@@ -27,7 +27,7 @@ final class SelectedSelectionKeySet extends AbstractSet<SelectionKey> {
     int size;
 
     SelectedSelectionKeySet() {
-        keys = new SelectionKey[1024];
+        keys = new SelectionKey[1024];// 默认 1024 大小
     }
 
     @Override
@@ -37,6 +37,7 @@ final class SelectedSelectionKeySet extends AbstractSet<SelectionKey> {
         }
 
         keys[size++] = o;
+        // 超出大小，扩容
         if (size == keys.length) {
             increaseCapacity();
         }
@@ -94,6 +95,7 @@ final class SelectedSelectionKeySet extends AbstractSet<SelectionKey> {
     }
 
     private void increaseCapacity() {
+        // 两倍扩容
         SelectionKey[] newKeys = new SelectionKey[keys.length << 1];
         System.arraycopy(keys, 0, newKeys, 0, size);
         keys = newKeys;

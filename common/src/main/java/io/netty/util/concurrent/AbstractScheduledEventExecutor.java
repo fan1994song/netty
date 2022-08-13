@@ -28,6 +28,9 @@ import java.util.concurrent.TimeUnit;
  * Abstract base class for {@link EventExecutor}s that want to support scheduling.
  */
 public abstract class AbstractScheduledEventExecutor extends AbstractEventExecutor {
+    /**
+     * 优先级队列比较器
+     */
     private static final Comparator<ScheduledFutureTask<?>> SCHEDULED_FUTURE_TASK_COMPARATOR =
             new Comparator<ScheduledFutureTask<?>>() {
                 @Override
@@ -38,11 +41,17 @@ public abstract class AbstractScheduledEventExecutor extends AbstractEventExecut
 
     private static final long START_TIME = System.nanoTime();
 
+    /**
+     * 用于唤醒的空任务
+     */
     static final Runnable WAKEUP_TASK = new Runnable() {
        @Override
        public void run() { } // Do nothing
     };
 
+    /**
+     * 优先级队列
+     */
     PriorityQueue<ScheduledFutureTask<?>> scheduledTaskQueue;
 
     long nextTaskId;
@@ -80,6 +89,9 @@ public abstract class AbstractScheduledEventExecutor extends AbstractEventExecut
         return System.nanoTime() - START_TIME;
     }
 
+    /**
+     * 计算可执行时间戳
+     */
     static long deadlineNanos(long nanoTime, long delay) {
         long deadlineNanos = nanoTime + delay;
         // Guard against overflow
@@ -87,6 +99,7 @@ public abstract class AbstractScheduledEventExecutor extends AbstractEventExecut
     }
 
     /**
+     * 计算还剩多久到达任务执行时间
      * Given an arbitrary deadline {@code deadlineNanos}, calculate the number of nano seconds from now
      * {@code deadlineNanos} would expire.
      * @param deadlineNanos An arbitrary deadline in nano seconds.
@@ -97,6 +110,7 @@ public abstract class AbstractScheduledEventExecutor extends AbstractEventExecut
     }
 
     /**
+     * 起始时间
      * The initial value used for delay and computations based upon a monatomic time source.
      * @return initial value used for delay and computations based upon a monatomic time source.
      */
@@ -105,6 +119,9 @@ public abstract class AbstractScheduledEventExecutor extends AbstractEventExecut
     }
 
     PriorityQueue<ScheduledFutureTask<?>> scheduledTaskQueue() {
+        /**
+         * 优先级队列，根据属性的compareTo方法比较来决定顺序
+         */
         if (scheduledTaskQueue == null) {
             scheduledTaskQueue = new DefaultPriorityQueue<ScheduledFutureTask<?>>(
                     SCHEDULED_FUTURE_TASK_COMPARATOR,
@@ -114,29 +131,36 @@ public abstract class AbstractScheduledEventExecutor extends AbstractEventExecut
         return scheduledTaskQueue;
     }
 
+    /**
+     * 和isEmpty()相同
+     */
     private static boolean isNullOrEmpty(Queue<ScheduledFutureTask<?>> queue) {
         return queue == null || queue.isEmpty();
     }
 
     /**
+     * 取消所有定时任务，估计和优雅下线有关
      * Cancel all scheduled tasks.
      *
      * This method MUST be called only when {@link #inEventLoop()} is {@code true}.
      */
     protected void cancelScheduledTasks() {
+        // 断言是否在eventLoop线程中，单元测试可用
         assert inEventLoop();
         PriorityQueue<ScheduledFutureTask<?>> scheduledTaskQueue = this.scheduledTaskQueue;
         if (isNullOrEmpty(scheduledTaskQueue)) {
             return;
         }
 
+        // 组成队列定时任务的数组
         final ScheduledFutureTask<?>[] scheduledTasks =
                 scheduledTaskQueue.toArray(new ScheduledFutureTask<?>[0]);
 
         for (ScheduledFutureTask<?> task: scheduledTasks) {
+            // 取消不移除定时任务
             task.cancelWithoutRemove(false);
         }
-
+        // 批量清除任务
         scheduledTaskQueue.clearIgnoringIndexes();
     }
 
@@ -154,16 +178,19 @@ public abstract class AbstractScheduledEventExecutor extends AbstractEventExecut
     protected final Runnable pollScheduledTask(long nanoTime) {
         assert inEventLoop();
 
+        // 检索得到队列头部任务元素
         ScheduledFutureTask<?> scheduledTask = peekScheduledTask();
         if (scheduledTask == null || scheduledTask.deadlineNanos() - nanoTime > 0) {
             return null;
         }
+        // 移除队列头部元素
         scheduledTaskQueue.remove();
         scheduledTask.setConsumed();
         return scheduledTask;
     }
 
     /**
+     * 返回最近一次定时任务距离当前时间的时间戳距离(可执行时间-当前时间)
      * Return the nanoseconds until the next scheduled task is ready to be run or {@code -1} if no task is scheduled.
      */
     protected final long nextScheduledTaskNano() {
@@ -174,18 +201,24 @@ public abstract class AbstractScheduledEventExecutor extends AbstractEventExecut
     /**
      * Return the deadline (in nanoseconds) when the next scheduled task is ready to be run or {@code -1}
      * if no task is scheduled.
+     * 从定时任务的优先级队列中获取task，不存在则返回-1，存在返回定时任务执行时间戳
      */
     protected final long nextScheduledTaskDeadlineNanos() {
         ScheduledFutureTask<?> scheduledTask = peekScheduledTask();
         return scheduledTask != null ? scheduledTask.deadlineNanos() : -1;
     }
 
+    /**
+     * 检索获取队列头部的任务返回
+     * @return
+     */
     final ScheduledFutureTask<?> peekScheduledTask() {
         Queue<ScheduledFutureTask<?>> scheduledTaskQueue = this.scheduledTaskQueue;
         return scheduledTaskQueue != null ? scheduledTaskQueue.peek() : null;
     }
 
     /**
+     * 队列中是否存在可执行但还未获得时间片执行的任务
      * Returns {@code true} if a scheduled task is ready for processing.
      */
     protected final boolean hasScheduledTasks() {
@@ -193,6 +226,13 @@ public abstract class AbstractScheduledEventExecutor extends AbstractEventExecut
         return scheduledTask != null && scheduledTask.deadlineNanos() <= getCurrentTimeNanos();
     }
 
+    /**
+     * 将runnable组装好相关的定时信息组成ScheduledFuture，并添加到队列中
+     * @param command
+     * @param delay
+     * @param unit
+     * @return
+     */
     @Override
     public ScheduledFuture<?> schedule(Runnable command, long delay, TimeUnit unit) {
         ObjectUtil.checkNotNull(command, "command");
@@ -208,6 +248,13 @@ public abstract class AbstractScheduledEventExecutor extends AbstractEventExecut
                 deadlineNanos(getCurrentTimeNanos(), unit.toNanos(delay))));
     }
 
+    /**
+     * 将callable组装好相关的定时信息组成ScheduledFuture，并添加到队列中
+     * @param callable
+     * @param delay
+     * @param unit
+     * @return
+     */
     @Override
     public <V> ScheduledFuture<V> schedule(Callable<V> callable, long delay, TimeUnit unit) {
         ObjectUtil.checkNotNull(callable, "callable");
@@ -221,6 +268,14 @@ public abstract class AbstractScheduledEventExecutor extends AbstractEventExecut
                 this, callable, deadlineNanos(getCurrentTimeNanos(), unit.toNanos(delay))));
     }
 
+    /**
+     * 添加一个周期性的定时任务
+     * @param command
+     * @param initialDelay
+     * @param period
+     * @param unit
+     * @return
+     */
     @Override
     public ScheduledFuture<?> scheduleAtFixedRate(Runnable command, long initialDelay, long period, TimeUnit unit) {
         ObjectUtil.checkNotNull(command, "command");
@@ -240,6 +295,14 @@ public abstract class AbstractScheduledEventExecutor extends AbstractEventExecut
                 this, command, deadlineNanos(getCurrentTimeNanos(), unit.toNanos(initialDelay)), unit.toNanos(period)));
     }
 
+    /**
+     * 添加一个周期性的定时任务
+     * @param command
+     * @param initialDelay
+     * @param delay
+     * @param unit
+     * @return
+     */
     @Override
     public ScheduledFuture<?> scheduleWithFixedDelay(Runnable command, long initialDelay, long delay, TimeUnit unit) {
         ObjectUtil.checkNotNull(command, "command");

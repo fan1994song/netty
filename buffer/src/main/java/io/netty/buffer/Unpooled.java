@@ -683,6 +683,7 @@ public final class Unpooled {
     }
 
     /**
+     * 创建一个只读缓冲区，该缓冲区不允许对指定的 code 进行任何修改操作
      * Creates a read-only buffer which disallows any modification operations
      * on the specified {@code buffer}.  The new buffer has the same
      * {@code readerIndex} and {@code writerIndex} with the specified
@@ -693,10 +694,11 @@ public final class Unpooled {
     @Deprecated
     public static ByteBuf unmodifiableBuffer(ByteBuf buffer) {
         ByteOrder endianness = buffer.order();
+        // 大端
         if (endianness == BIG_ENDIAN) {
             return new ReadOnlyByteBuf(buffer);
         }
-
+        // 小端
         return new ReadOnlyByteBuf(buffer.order(BIG_ENDIAN)).order(LITTLE_ENDIAN);
     }
 

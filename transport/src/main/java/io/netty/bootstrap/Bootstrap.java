@@ -47,13 +47,25 @@ public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
 
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(Bootstrap.class);
 
+    /**
+     * 默认地址解析器对象
+     */
     private static final AddressResolverGroup<?> DEFAULT_RESOLVER = DefaultAddressResolverGroup.INSTANCE;
 
+    /**
+     * 配置属性类
+     */
     private final BootstrapConfig config = new BootstrapConfig(this);
 
+    /**
+     * 地址解析对象
+     */
     @SuppressWarnings("unchecked")
     private volatile AddressResolverGroup<SocketAddress> resolver =
             (AddressResolverGroup<SocketAddress>) DEFAULT_RESOLVER;
+    /**
+     * 连接地址
+     */
     private volatile SocketAddress remoteAddress;
 
     public Bootstrap() { }
@@ -141,6 +153,7 @@ public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
 
     /**
      * Connect a {@link Channel} to the remote peer.
+     * 建立远程连接
      */
     public ChannelFuture connect(SocketAddress remoteAddress, SocketAddress localAddress) {
         ObjectUtil.checkNotNull(remoteAddress, "remoteAddress");
@@ -152,10 +165,12 @@ public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
      * @see #connect()
      */
     private ChannelFuture doResolveAndConnect(final SocketAddress remoteAddress, final SocketAddress localAddress) {
+        // 初始化并注册一个 Channel 对象，因为注册是异步的过程，所以返回一个 ChannelFuture 对象
         final ChannelFuture regFuture = initAndRegister();
         final Channel channel = regFuture.channel();
 
         if (regFuture.isDone()) {
+            // 未连接成功，直接return
             if (!regFuture.isSuccess()) {
                 return regFuture;
             }
@@ -185,6 +200,9 @@ public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
         }
     }
 
+    /**
+     * 解析远程地址，并进行连接
+     */
     private ChannelFuture doResolveAndConnect0(final Channel channel, SocketAddress remoteAddress,
                                                final SocketAddress localAddress, final ChannelPromise promise) {
         try {
@@ -197,22 +215,26 @@ public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
                 return promise.setFailure(cause);
             }
 
+            // 不支持解析或者已经解析过
             if (!resolver.isSupported(remoteAddress) || resolver.isResolved(remoteAddress)) {
                 // Resolver has no idea about what to do with the specified remote address or it's resolved already.
                 doConnect(remoteAddress, localAddress, promise);
                 return promise;
             }
 
+            // 解析远程地址
             final Future<SocketAddress> resolveFuture = resolver.resolve(remoteAddress);
 
             if (resolveFuture.isDone()) {
                 final Throwable resolveFailureCause = resolveFuture.cause();
 
+                // 失败原因填充到 promise
                 if (resolveFailureCause != null) {
                     // Failed to resolve immediately
                     channel.close();
                     promise.setFailure(resolveFailureCause);
                 } else {
+                    // 成功，得到结果，建立连接
                     // Succeeded to resolve immediately; cached? (or did a blocking lookup)
                     doConnect(resolveFuture.getNow(), localAddress, promise);
                 }
@@ -242,6 +264,7 @@ public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
 
         // This method is invoked before channelRegistered() is triggered.  Give user handlers a chance to set up
         // the pipeline in its channelRegistered() implementation.
+        // 在触发 channelRegistered() 之前调用此方法。让用户处理程序有机会在其 channelRegistered() 实现中设置管道
         final Channel channel = connectPromise.channel();
         channel.eventLoop().execute(new Runnable() {
             @Override
@@ -265,6 +288,10 @@ public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
         setAttributes(channel, newAttributesArray());
     }
 
+    /**
+     * 基础校验：handler不可为空
+     * @return
+     */
     @Override
     public Bootstrap validate() {
         super.validate();
