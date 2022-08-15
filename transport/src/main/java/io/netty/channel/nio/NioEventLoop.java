@@ -323,6 +323,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
     }
 
     /**
+     * 无锁队列
      * 若数值为MAX则创建默认的有界队列，否则根据入参数值来（PlatformDependent内部有实现，数值不会过大）
      * @param maxPendingTasks
      * @return
